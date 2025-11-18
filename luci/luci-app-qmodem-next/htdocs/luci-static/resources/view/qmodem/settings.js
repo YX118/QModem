@@ -26,12 +26,49 @@ var callScanAll = rpc.declare({
 	method: 'scan_all'
 });
 
+var callGetPcieDevices = rpc.declare({
+	object: 'qmodem',
+	method: 'get_pcie_devices'
+});
+
+var callGetUsbDevices = rpc.declare({
+	object: 'qmodem',
+	method: 'get_usb_devices'
+});
+
+var callGetLeds = rpc.declare({
+	object: 'qmodem',
+	method: 'get_leds'
+});
+
+var callGetNetworkInterfaces = rpc.declare({
+	object: 'qmodem',
+	method: 'get_network_interfaces'
+});
+
+var callGetTtyPorts = rpc.declare({
+	object: 'qmodem',
+	method: 'get_tty_ports'
+});
+
 return view.extend({
 	load: function() {
 		return Promise.all([
 			uci.load('qmodem'),
-			callSystemBoard()
-		]);
+			callSystemBoard(),
+			callGetPcieDevices(),
+			callGetUsbDevices(),
+			callGetLeds(),
+			callGetNetworkInterfaces(),
+			callGetTtyPorts()
+		]).then(L.bind(function(results) {
+			this.pcieDevices = results[2] && results[2].devices ? results[2].devices : [];
+			this.usbDevices = results[3] && results[3].devices ? results[3].devices : [];
+			this.leds = results[4] && results[4].leds ? results[4].leds : [];
+			this.networkInterfaces = results[5] && results[5].interfaces ? results[5].interfaces : [];
+			this.ttyPorts = results[6] && results[6].ports ? results[6].ports : [];
+			return results;
+		}, this));
 	},
 
 	render: function(data) {
@@ -160,83 +197,139 @@ return view.extend({
 		o.default = '1';
 		o.editable = true;
 
-		o = s.option(form.Value, 'name', _('Model Name'));
-		o.placeholder = 'RG500Q';
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'alias', _('Alias'));
-		o.placeholder = 'Modem1';
-
-		o = s.option(form.Value, 'path', _('Device Path'));
-		o.placeholder = '/sys/bus/usb/devices/1-1';
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'at_port', _('AT Port'));
-		o.placeholder = '/dev/ttyUSB2';
-		o.rmempty = false;
-
-		o = s.option(form.Value, 'sms_at_port', _('SMS AT Port'));
-		o.placeholder = '/dev/ttyUSB2';
-
-		o = s.option(form.Value, 'override_at_port', _('Override AT Port'));
-		o.placeholder = '/dev/ttyUSB3';
-
-		o = s.option(form.Flag, 'use_ubus', _('Use Ubus AT Daemon'));
+		o = s.option(form.Flag, 'soft_reboot', _('Soft Reboot'));
+		o.description = _('enable modem soft reboot');
 		o.default = '0';
-		// ===========================================
-		// Modem Slot Configuration
-		// ===========================================
-		s = m.section(form.TableSection, 'modem-slot', _('Modem Slot Configuration'));
-		s.description = _('Configure physical slots for modem installation');
-		s.anonymous = false;
-		s.addremove = true;
-
-		o = s.option(form.ListValue, 'type', _('Slot Type'));
-		o.value('usb', _('USB'));
-		o.value('pcie', _('PCIe'));
-		o.default = 'usb';
-
-		o = s.option(form.Value, 'slot', _('Slot ID'));
-		o.description = _('Physical slot identifier (e.g., 1-1.4, 0000:01:00.0)');
 		o.rmempty = false;
+		o.modalonly = true;
 
-		o = s.option(form.Value, 'alias', _('Default Alias'));
-		o.description = _('After setting this option, the first module loaded into this slot will automatically be assigned this default alias.');
-		o.placeholder = 'Modem';
+	o = s.option(form.Value, 'name', _('Model Name'));
+	o.placeholder = _('e.g.') + ' RG500Q';
+	o.rmempty = false;	o = s.option(form.Value, 'alias', _('Alias'));
+	o.placeholder = _('e.g.') + ' Modem1';	o = s.option(form.Value, 'path', _('Device Path'));
+	o.placeholder = _('e.g.') + ' /sys/bus/usb/devices/1-1';
+	o.rmempty = false;	o = s.option(form.Value, 'at_port', _('AT Port'));
+	o.placeholder = _('e.g.') + ' /dev/ttyUSB2';
+	o.rmempty = false;
+	if (this.ttyPorts && this.ttyPorts.length > 0) {
+		this.ttyPorts.forEach(function(port) {
+			o.value(port.id, port.label);
+		});
+	}	o = s.option(form.Value, 'sms_at_port', _('SMS AT Port'));
+	o.placeholder = _('e.g.') + ' /dev/ttyUSB2';
+	if (this.ttyPorts && this.ttyPorts.length > 0) {
+		this.ttyPorts.forEach(function(port) {
+			o.value(port.id, port.label);
+		});
+	}	o = s.option(form.Value, 'override_at_port', _('Override AT Port'));
+	o.placeholder = _('e.g.') + ' /dev/ttyUSB3';
+	if (this.ttyPorts && this.ttyPorts.length > 0) {
+		this.ttyPorts.forEach(function(port) {
+			o.value(port.id, port.label);
+		});
+	}		o = s.option(form.Flag, 'use_ubus', _('Use Ubus AT Daemon'));
+		o.default = '0';
+	// ===========================================
+	// Modem Slot Configuration
+	// ===========================================
+	s = m.section(form.GridSection, 'modem-slot', _('Modem Slot Configuration'));
+	s.description = _('Configure physical slots for modem installation');
+	s.anonymous = false;
+	s.addremove = true;
+	s.sortable = true;
+	s.modaltitle = L.bind(function(section_id) {
+		var slotId = uci.get('qmodem', section_id, 'slot');
+		var alias = uci.get('qmodem', section_id, 'alias');
+		return _('Modem Slot') + ': ' + (alias || slotId || section_id);
+	}, this);
 
-		o = s.option(form.Value, 'default_metric', _('Default Metric'));
-		o.description = _('The first module loaded into this slot will automatically be assigned this default metric.');
-		o.datatype = 'range(1,255)';
-		o.placeholder = '10';
+	o = s.option(form.ListValue, 'type', _('Slot Type'));
+	o.value('usb', _('USB'));
+	o.value('pcie', _('PCIe'));
+	o.default = 'usb';
+	o.editable = true;
 
-		o = s.option(form.Value, 'sim_led', _('SIM LED'));
-		o.description = _('LED indicator for SIM card status');
-		o.optional = true;
+	o = s.option(form.Value, 'slot', _('Slot ID'));
+	o.description = _('Physical slot identifier (e.g., 1-1.4 for USB, 0000:01:00.0 for PCIe)');
+	o.rmempty = false;
+	o.editable = true;
+	// Add PCIe devices
+	if (this.pcieDevices && this.pcieDevices.length > 0) {
+		this.pcieDevices.forEach(function(device) {
+			o.value(device.id, device.label);
+		});
+	}
+	// Add USB devices
+	if (this.usbDevices && this.usbDevices.length > 0) {
+		this.usbDevices.forEach(function(device) {
+			o.value(device.id, device.label);
+		});
+	}
 
-		o = s.option(form.Value, 'net_led', _('Network LED'));
-		o.description = _('LED indicator for network connection status');
-		o.optional = true;
+	o = s.option(form.Value, 'alias', _('Default Alias'));
+	o.description = _('After setting this option, the first module loaded into this slot will automatically be assigned this default alias.');
+	o.placeholder = _('e.g.') + ' Modem';
+	o.editable = true;
 
-		o = s.option(form.Value, 'ethernet_5g', _('5G Ethernet Interface'));
-		o.description = _('For 5G modules using the Ethernet PHY connection, please specify the network interface name (e.g., eth0, eth1)');
-		o.optional = true;
+	o = s.option(form.Value, 'default_metric', _('Default Metric'));
+	o.description = _('The first module loaded into this slot will automatically be assigned this default metric.');
+	o.datatype = 'range(1,255)';
+	o.placeholder = _('e.g.') + ' 10';
+	o.editable = true;
 
-		o = s.option(form.Value, 'associated_usb', _('Associated USB'));
-		o.description = _('For M.2 slots with both PCIe and USB support, specify the associated USB port (for ttyUSB access)');
-		o.depends('type', 'pcie');
-		o.optional = true;
+	o = s.option(form.Value, 'sim_led', _('SIM LED'));
+	o.description = _('LED indicator for SIM card status');
+	o.optional = true;
+	o.modalonly = true;
+	if (this.leds && this.leds.length > 0) {
+		this.leds.forEach(function(led) {
+			o.value(led.id, led.label);
+		});
+	}
 
-		o = s.option(form.Value, 'gpio', _('Power GPIO'));
-		o.description = _('GPIO pin for power control');
-		o.optional = true;
+	o = s.option(form.Value, 'net_led', _('Network LED'));
+	o.description = _('LED indicator for network connection status');
+	o.optional = true;
+	o.modalonly = true;
+	if (this.leds && this.leds.length > 0) {
+		this.leds.forEach(function(led) {
+			o.value(led.id, led.label);
+		});
+	}
 
-		o = s.option(form.Value, 'gpio_down', _('GPIO Down Value'));
-		o.depends('gpio', /./);
-		o.placeholder = '0';
+	o = s.option(form.Value, 'ethernet_5g', _('5G Ethernet Interface'));
+	o.description = _('For 5G modules using the Ethernet PHY connection, please specify the network interface name (e.g., eth0, eth1)');
+	o.optional = true;
+	o.modalonly = true;
+	if (this.networkInterfaces && this.networkInterfaces.length > 0) {
+		this.networkInterfaces.forEach(function(iface) {
+			o.value(iface.id, iface.label);
+		});
+	}
 
-		o = s.option(form.Value, 'gpio_up', _('GPIO Up Value'));
-		o.depends('gpio', /./);
-		o.placeholder = '1';
+	o = s.option(form.Value, 'associated_usb', _('Associated USB'));
+	o.description = _('For M.2 slots with both PCIe and USB support, specify the associated USB port (for ttyUSB access)');
+	o.depends('type', 'pcie');
+	o.optional = true;
+	o.modalonly = true;
+	if (this.usbDevices && this.usbDevices.length > 0) {
+		this.usbDevices.forEach(function(device) {
+			o.value(device.id, device.id);
+		});
+	}
+
+	o = s.option(form.Value, 'gpio', _('Power GPIO'));
+	o.description = _('GPIO pin for power control');
+	o.optional = true;
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'gpio_down', _('GPIO Down Value'));
+	o.depends('gpio', /\./);
+	o.placeholder = _('e.g.') + ' 0';
+
+	o = s.option(form.Value, 'gpio_up', _('GPIO Up Value'));
+	o.depends('gpio', /\./);
+	o.placeholder = _('e.g.') + ' 1';
 
 		return m.render();
 	}

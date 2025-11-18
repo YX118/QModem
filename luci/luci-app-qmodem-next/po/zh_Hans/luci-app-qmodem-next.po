@@ -1693,3 +1693,315 @@ msgstr "短信对话"
 # Source: view/qmodem/settings.js
 msgid "QModem Settings"
 msgstr "QModem 设置"
+
+# Source: vendor/sierra.sh:437, vendor/sierra.sh:440, vendor/sierra.sh:443, vendor/sierra.sh:446
+msgid "$key"
+msgstr "$key"
+
+# Source: view/qmodem/network_config.js:364, view/qmodem/network_config.js:441
+msgid "A1 (AT)"
+msgstr "A1 (AT)"
+
+# Source: view/qmodem/network_config.js:346, view/qmodem/network_config.js:422
+msgid "APN"
+msgstr "APN"
+
+# Source: view/qmodem/config_advanced.js:737
+msgid "ARFCN"
+msgstr "ARFCN"
+
+# Source: view/qmodem/network_config.js:390
+msgid "Authentication Type"
+msgstr "认证类型"
+
+# Source: view/qmodem/network_config.js:347, view/qmodem/network_config.js:350, view/qmodem/network_config.js:424, view/qmodem/network_config.js:427
+msgid "Auto Choose"
+msgstr "自动选择"
+
+# Source: view/qmodem/network_config.js:381, view/qmodem/network_config.js:458
+msgid "Beeline (RU)"
+msgstr "Beeline (RU)"
+
+# Source: view/qmodem/network_config.js:310
+msgid "Bridge Mode"
+msgstr "桥接模式"
+
+# Source: view/qmodem/network_config.js:323
+msgid "Caution: Enabling this option will make it the IPV6 RA Master, and only one interface can be configured as such."
+msgstr "注意：启用此选项将使其成为IPv6 RA主设备，且仅能配置一个接口为此类型。"
+
+# Source: view/qmodem/network_config.js:311
+msgid "Caution: Only avalible for quectel sdx 5G Modem."
+msgstr "注意：仅适用于高通SDX 5G调制解调器。"
+
+# Source: view/qmodem/network_config.js:373, view/qmodem/network_config.js:450
+msgid "Celcom (MY)"
+msgstr "Celcom (MY)"
+
+# Source: view/qmodem/network_config.js:354, view/qmodem/network_config.js:431
+msgid "China Broadcast (CN)"
+msgstr "中国广播电视 (CN)"
+
+# Source: view/qmodem/network_config.js:351, view/qmodem/network_config.js:428
+msgid "China Mobile (CN)"
+msgstr "中国移动 (CN)"
+
+# Source: view/qmodem/network_config.js:353, view/qmodem/network_config.js:430
+msgid "China Telecom (CN)"
+msgstr "中国电信 (CN)"
+
+# Source: view/qmodem/network_config.js:352, view/qmodem/network_config.js:429
+msgid "China Unicom (CN)"
+msgstr "中国联通 (CN)"
+
+# Source: view/qmodem/network_config.js:293
+msgid "DNS"
+msgstr "DNS"
+
+# Source: view/qmodem/network_config.js:374, view/qmodem/network_config.js:451
+msgid "DiGi (MY)"
+msgstr "DiGi (MY)"
+
+# Source: view/qmodem/network_config.js:371, view/qmodem/network_config.js:448
+msgid "Dito Telecomunity (PH)"
+msgstr "Dito Telecom (PH)"
+
+# Source: view/qmodem/network_config.js:316
+msgid "Do Not modify resolv.conf"
+msgstr "不修改 resolv.conf"
+
+# Source: view/qmodem/network_config.js:365, view/qmodem/network_config.js:442
+msgid "Drei (AT)"
+msgstr "Drei (AT)"
+
+# Source: view/qmodem/network_config.js:362, view/qmodem/network_config.js:439
+msgid "E-Plus (DE)"
+msgstr "E-Plus (DE)"
+
+# Source: vendor/fibocom.sh:1518, vendor/huawei.sh:581, vendor/meig.sh:627, vendor/neoway.sh:760, vendor/quectel.sh:1745, vendor/simcom.sh:1005
+msgid "Ec/Io"
+msgstr "Ec/Io"
+
+# Source: vendor/fibocom.sh:1519, vendor/huawei.sh:582, vendor/quectel.sh:1746
+msgid "Ec/No"
+msgstr "Ec/No"
+
+# Source: view/qmodem/network_config.js:166, view/qmodem/network_config.js:769
+msgid "Failed to disable QModem Network: "
+msgstr "禁用QModem网络失败："
+
+# Source: view/qmodem/network_config.js:147, view/qmodem/network_config.js:750
+msgid "Failed to enable QModem Network: "
+msgstr "启用QModem网络失败："
+
+# Source: view/qmodem/network_config.js:304
+msgid "Force Set APN"
+msgstr "强制设置APN"
+
+# Source: view/qmodem/network_config.js:369, view/qmodem/network_config.js:446
+msgid "Globe Postpaid (PH)"
+msgstr "Globe 后付费 (PH)"
+
+# Source: view/qmodem/network_config.js:368, view/qmodem/network_config.js:445
+msgid "Globe Prepaid (PH)"
+msgstr "Globe 预付费 (PH)"
+
+# Source: view/qmodem/network_config.js:339
+msgid "IPv4"
+msgstr "IPv4"
+
+# Source: view/qmodem/network_config.js:341
+msgid "IPv4/IPv6"
+msgstr "IPv4/IPv6"
+
+# Source: view/qmodem/network_config.js:340
+msgid "IPv6"
+msgstr "IPv6"
+
+# Source: view/qmodem/network_config.js:305
+msgid "If enabled, the APN will be set even if it matches the current configuration.(only works with tom modified version of quectel-cm)"
+msgstr "启用后，即使APN与当前配置一致也会被设置。（仅适用于Tom修改版的quectel-cm）"
+
+# Source: view/qmodem/network_config.js:423
+msgid "If slot 2 config is not set,will use slot 1 config."
+msgstr "若未设置插槽2配置，则使用插槽1配置。"
+
+# Source: view/qmodem/network_config.js:294
+msgid "If the DNS server is not set, it will use the DNS server leased by the operator."
+msgstr "若未设置DNS服务器，将使用运营商分配的DNS服务器。"
+
+# Source: view/qmodem/network_config.js:417
+msgid "If the PIN code is not set, leave it blank."
+msgstr "若未设置PIN码，请留空。"
+
+# Source: view/qmodem/network_config.js:382, view/qmodem/network_config.js:459
+msgid "MTS (RU)"
+msgstr "MTS (RU)"
+
+# Source: view/qmodem/network_config.js:366, view/qmodem/network_config.js:443
+msgid "Magenta (AT)"
+msgstr "Magenta (AT)"
+
+# Source: view/qmodem/network_config.js:376, view/qmodem/network_config.js:453
+msgid "Maxis UT (MY)"
+msgstr "Maxis UT (MY)"
+
+# Source: view/qmodem/network_config.js:375, view/qmodem/network_config.js:452
+msgid "Maxis | Hotlink (MY)"
+msgstr "Maxis | Hotlink (MY)"
+
+# Source: view/qmodem/network_config.js:383, view/qmodem/network_config.js:460
+msgid "Megafon (RU)"
+msgstr "Megafon (RU)"
+
+# Source: view/qmodem/network_config.js:467
+msgid "Metric"
+msgstr "度量值"
+
+# Source: view/status/include/11_modem.js:19
+msgid "Modem Info"
+msgstr "调制解调器信息"
+
+# Source: view/qmodem/settings.js:243
+msgid "Modem Slot"
+msgstr "调制解调器插槽"
+
+# Source: view/qmodem/network_config.js:392
+msgid "MsChapV2"
+msgstr "MS-CHAPv2"
+
+# Source: view/qmodem/network_config.js:391
+msgid "NONE"
+msgstr "无"
+
+# Source: view/status/include/11_modem.js:51, view/status/include/11_modem.js:88, view/status/include/11_modem.js:120
+msgid "No modem information available"
+msgstr "无调制解调器信息"
+
+# Source: view/qmodem/network_config.js:329
+msgid "Once checking, the prefix will be apply to lan zone"
+msgstr "勾选后，前缀将应用于LAN区域"
+
+# Source: view/qmodem/network_config.js:407
+msgid "PAP/CHAP Password"
+msgstr "PAP/CHAP 密码"
+
+# Source: view/qmodem/network_config.js:399
+msgid "PAP/CHAP Username"
+msgstr "PAP/CHAP 用户名"
+
+# Source: view/qmodem/config_advanced.js:723
+msgid "PCI"
+msgstr "PCI"
+
+# Source: view/qmodem/settings.js:248
+msgid "PCIe"
+msgstr "PCIe"
+
+# Source: view/qmodem/network_config.js:334
+msgid "PDP Context Index"
+msgstr "PDP上下文索引"
+
+# Source: view/qmodem/network_config.js:416
+msgid "PIN Code"
+msgstr "PIN码"
+
+# Source: view/qmodem/settings.js:253
+msgid "Physical slot identifier (e.g., 1-1.4 for USB, 0000:01:00.0 for PCIe)"
+msgstr "物理插槽标识符（例如：USB为1-1.4，PCIe为0000:01:00.0）"
+
+# Source: view/qmodem/network_config.js:162, view/qmodem/network_config.js:765
+msgid "QModem Network disabled successfully"
+msgstr "QModem网络已成功禁用"
+
+# Source: view/qmodem/network_config.js:143, view/qmodem/network_config.js:746
+msgid "QModem Network enabled successfully"
+msgstr "QModem网络已成功启用"
+
+# Source: view/qmodem/network_config.js:322
+msgid "RA Master"
+msgstr "RA主设备"
+
+# Source: view/qmodem/network_config.js:387, view/qmodem/network_config.js:464
+msgid "Rostelecom (RU)"
+msgstr "Rostelecom (RU)"
+
+# Source: view/qmodem/network_config.js:388, view/qmodem/network_config.js:465
+msgid "Sber Mobile (RU)"
+msgstr "Sber Mobile (RU)"
+
+# Source: view/qmodem/network_config.js:355, view/qmodem/network_config.js:432
+msgid "Skytone (CN)"
+msgstr "Skytone (CN)"
+
+# Source: view/qmodem/network_config.js:370, view/qmodem/network_config.js:447
+msgid "Smart Communications (PH)"
+msgstr "Smart Communications (PH)"
+
+# Source: view/qmodem/network_config.js:108, view/qmodem/network_config.js:711
+msgid "Start"
+msgstr "启动"
+
+# Source: view/qmodem/network_config.js:127, view/qmodem/network_config.js:730
+msgid "Stop"
+msgstr "停止"
+
+# Source: view/qmodem/network_config.js:357, view/qmodem/network_config.js:434
+msgid "Swisscom (CH)"
+msgstr "Swisscom (CH)"
+
+# Source: view/qmodem/network_config.js:386, view/qmodem/network_config.js:463
+msgid "T-mobile (RU)"
+msgstr "T-mobile (RU)"
+
+# Source: view/qmodem/network_config.js:384, view/qmodem/network_config.js:461
+msgid "Tele2 (RU)"
+msgstr "Tele2 (RU)"
+
+# Source: view/qmodem/network_config.js:361, view/qmodem/network_config.js:438
+msgid "Telekom (DE)"
+msgstr "Telekom (DE)"
+
+# Source: view/qmodem/network_config.js:468
+msgid "The metric value is used to determine the priority of the route. The smaller the value, the higher the priority. Cannot duplicate."
+msgstr "度量值用于确定路由优先级，数值越小优先级越高，不可重复。"
+
+# Source: view/qmodem/network_config.js:378, view/qmodem/network_config.js:455
+msgid "UMobile (MY)"
+msgstr "UMobile (MY)"
+
+# Source: view/qmodem/settings.js:247
+msgid "USB"
+msgstr "USB"
+
+# Source: view/qmodem/network_config.js:379, view/qmodem/network_config.js:456
+msgid "Unifi (MY)"
+msgstr "Unifi (MY)"
+
+# Source: view/qmodem/network_config.js:298
+msgid "Use Ubus"
+msgstr "使用Ubus"
+
+# Source: view/qmodem/network_config.js:360, view/qmodem/network_config.js:437
+msgid "Vodafone (DE)"
+msgstr "Vodafone (DE)"
+
+# Source: view/qmodem/network_config.js:377, view/qmodem/network_config.js:454
+msgid "YES (MY)"
+msgstr "YES (MY)"
+
+# Source: view/qmodem/network_config.js:385, view/qmodem/network_config.js:462
+msgid "Yota (RU)"
+msgstr "Yota (RU)"
+
+# Source: view/qmodem/settings.js:207, view/qmodem/settings.js:209, view/qmodem/settings.js:210, view/qmodem/settings.js:212, view/qmodem/settings.js:219, view/qmodem/settings.js:225, view/qmodem/settings.js:271, view/qmodem/settings.js:277, view/qmodem/settings.js:328, view/qmodem/settings.js:332
+msgid "e.g."
+msgstr "例如"
+
+# Source: view/qmodem/settings.js:201
+msgid "enable modem soft reboot"
+msgstr "启用调制解调器软重启"
+
+# Source: view/qmodem/network_config.js:317
+msgid "quectel-CM will append the DNS server to the resolv.conf file by default.if you do not want to modify the resolv.conf file, please check this option."
+msgstr "默认情况下，quectel-CM会将DNS服务器追加到resolv.conf文件中。如不希望修改该文件，请勾选此选项。"

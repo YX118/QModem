@@ -282,7 +282,12 @@ case "$1" in
     },
     "scan_pcie": {},
     "scan_usb": {},
-    "scan_all": {}
+    "scan_all": {},
+    "get_pcie_devices": {},
+    "get_usb_devices": {},
+    "get_leds": {},
+    "get_network_interfaces": {},
+    "get_tty_ports": {}
 }
 EOF
         ;;
@@ -707,6 +712,121 @@ EOF
                     json_add_int "code" 127
                     json_add_string "message" "Scan script not found or not executable"
                 fi
+                json_dump
+                ;;
+            
+            get_pcie_devices)
+                json_init
+                json_add_array "devices"
+                if [ -d "/sys/bus/pci/devices/" ]; then
+                    for device in /sys/bus/pci/devices/*; do
+                        [ -e "$device" ] || continue
+                        device_id=$(basename "$device")
+                        json_add_object
+                        json_add_string "id" "$device_id"
+                        json_add_string "label" "$device_id [pcie]"
+                        json_close_object
+                    done
+                fi
+                json_close_array
+                json_dump
+                ;;
+            
+            get_usb_devices)
+                json_init
+                json_add_array "devices"
+                if [ -d "/sys/bus/usb/devices/" ]; then
+                    for device in /sys/bus/usb/devices/*; do
+                        [ -e "$device" ] || continue
+                        device_id=$(basename "$device")
+                        # Skip root hubs (usb1, usb2, etc.)
+                        echo "$device_id" | grep -q '^usb[0-9]\+$' && continue
+                        json_add_object
+                        json_add_string "id" "$device_id"
+                        json_add_string "label" "$device_id [usb]"
+                        json_close_object
+                    done
+                fi
+                json_close_array
+                json_dump
+                ;;
+            
+            get_leds)
+                json_init
+                json_add_array "leds"
+                if [ -d "/sys/class/leds/" ]; then
+                    for led in /sys/class/leds/*; do
+                        [ -e "$led" ] || continue
+                        led_name=$(basename "$led")
+                        json_add_object
+                        json_add_string "id" "$led_name"
+                        json_add_string "label" "$led_name"
+                        json_close_object
+                    done
+                fi
+                json_close_array
+                json_dump
+                ;;
+            
+            get_network_interfaces)
+                json_init
+                json_add_array "interfaces"
+                if [ -d "/sys/class/net/" ]; then
+                    for iface in /sys/class/net/*; do
+                        [ -e "$iface" ] || continue
+                        iface_name=$(basename "$iface")
+                        json_add_object
+                        json_add_string "id" "$iface_name"
+                        json_add_string "label" "$iface_name"
+                        json_close_object
+                    done
+                fi
+                json_close_array
+                json_dump
+                ;;
+            
+            get_tty_ports)
+                json_init
+                json_add_array "ports"
+                # Add ttyUSB ports (USB modems)
+                for i in 0 1 2 3 4 5 6 7; do
+                    if [ -e "/dev/ttyUSB$i" ]; then
+                        json_add_object
+                        json_add_string "id" "/dev/ttyUSB$i"
+                        json_add_string "label" "/dev/ttyUSB$i"
+                        json_close_object
+                    fi
+                done
+                # Add ttyACM ports (CDC ACM modems)
+                for i in 0 1 2 3; do
+                    if [ -e "/dev/ttyACM$i" ]; then
+                        json_add_object
+                        json_add_string "id" "/dev/ttyACM$i"
+                        json_add_string "label" "/dev/ttyACM$i"
+                        json_close_object
+                    fi
+                done
+                # Add mhi ports (PCIe modems with MHI interface)
+                for port in /dev/mhi_*; do
+                    if [ -e "$port" ]; then
+                        port_name=$(basename "$port")
+                        json_add_object
+                        json_add_string "id" "$port"
+                        json_add_string "label" "$port_name"
+                        json_close_object
+                    fi
+                done
+                # Add wwan ports
+                for port in /dev/wwan*at; do
+                    if [ -e "$port" ]; then
+                        port_name=$(basename "$port")
+                        json_add_object
+                        json_add_string "id" "$port"
+                        json_add_string "label" "$port_name"
+                        json_close_object
+                    fi
+                done
+                json_close_array
                 json_dump
                 ;;
                 

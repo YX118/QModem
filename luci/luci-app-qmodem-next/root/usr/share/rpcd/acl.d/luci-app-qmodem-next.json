@@ -23,7 +23,15 @@
 					"get_sms",
 					"info",
 					"network_info",
-					"sim_info"
+					"sim_info",
+					"scan_all",
+					"scan_pcie",
+					"scan_usb",
+					"get_pcie_devices",
+					"get_usb_devices",
+					"get_leds",
+					"get_network_interfaces",
+					"get_tty_ports"
 				],
 				"qmodem_sms": [
 					"list_sms",
