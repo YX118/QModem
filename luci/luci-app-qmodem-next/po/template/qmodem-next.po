@@ -1296,6 +1296,10 @@ msgstr ""
 msgid "Modem Devices"
 msgstr ""
 
+#: view/status/include/11_modem.js:19
+msgid "Modem Info"
+msgstr ""
+
 #: view/qmodem/network_config.js:123
 msgid "Modem Model"
 msgstr ""
@@ -1440,6 +1444,12 @@ msgstr ""
 #: view/qmodem/config_advanced.js:15
 #: view/qmodem/debug.js:15
 msgid "No modem configured."
+msgstr ""
+
+#: view/status/include/11_modem.js:51
+#: view/status/include/11_modem.js:88
+#: view/status/include/11_modem.js:120
+msgid "No modem information available"
 msgstr ""
 
 #: view/qmodem/overview.js:324
