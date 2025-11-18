@@ -12,18 +12,6 @@ msgstr ""
 msgid "$key"
 msgstr ""
 
-#: vendor/huawei.sh:404
-msgid "$nr_mode DL"
-msgstr ""
-
-#: vendor/huawei.sh:402
-msgid "$nr_mode Information"
-msgstr ""
-
-#: vendor/huawei.sh:405
-msgid "$nr_mode UL"
-msgstr ""
-
 #: view/qmodem/sms.js:450
 #: view/qmodem/sms_conversation.js:255
 msgid "16-bit (Unicode)"
@@ -429,6 +417,10 @@ msgstr ""
 
 #: view/qmodem/config_advanced.js:352
 msgid "Current Preference"
+msgstr ""
+
+#: vendor/huawei.sh:405
+msgid "DL"
 msgstr ""
 
 #: vendor/fibocom.sh:1429
@@ -967,6 +959,10 @@ msgstr ""
 msgid "Incomplete (part "
 msgstr ""
 
+#: vendor/huawei.sh:403
+msgid "Information"
+msgstr ""
+
 #: vendor/fibocom.sh:507
 #: vendor/fibocom.sh:521
 #: vendor/foxconn.sh:276
@@ -1336,7 +1332,7 @@ msgstr ""
 msgid "NR (5G) Cells"
 msgstr ""
 
-#: vendor/huawei.sh:403
+#: vendor/huawei.sh:404
 #: view/qmodem/config_advanced.js:760
 msgid "NR Band"
 msgstr ""
@@ -2284,6 +2280,10 @@ msgstr ""
 
 #: vendor/simcom.sh:1006
 msgid "Tx Power"
+msgstr ""
+
+#: vendor/huawei.sh:406
+msgid "UL"
 msgstr ""
 
 #: vendor/fibocom.sh:1431
