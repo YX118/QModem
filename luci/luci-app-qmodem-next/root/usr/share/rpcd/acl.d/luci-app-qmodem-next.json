@@ -67,5 +67,13 @@
 			},
 			"uci": [ "qmodem" ]
 		}
+	},
+	"luci-mod-status-index": {
+		"description": "Grant access to main status display",
+		"read": {
+			"ubus": {
+				"qmodem": [ "cell_info","base_info" ]
+			}
+		}
 	}
 }
