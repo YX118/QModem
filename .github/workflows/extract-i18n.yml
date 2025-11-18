@@ -32,12 +32,12 @@ jobs:
             --sh-path application/qmodem/files/usr/share/qmodem \
             --js-path luci/luci-app-qmodem-next/htdocs/luci-static/resources \
             --format po \
-            --output luci/luci-app-qmodem-next/po/template
+            --output luci/luci-app-qmodem-next/po/template/qmodem-next.po
             
       - name: Check for changes
         id: git-check
         run: |
-          git diff --exit-code luci/luci-app-qmodem-next/po/template || echo "changed=true" >> $GITHUB_OUTPUT
+          git diff --exit-code luci/luci-app-qmodem-next/po/template/qmodem-next.po || echo "changed=true" >> $GITHUB_OUTPUT
           
       - name: Commit and push if changed
         if: steps.git-check.outputs.changed == 'true' && github.event_name == 'push'
