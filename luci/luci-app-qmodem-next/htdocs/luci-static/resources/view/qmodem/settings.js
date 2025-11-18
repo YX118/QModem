@@ -144,6 +144,45 @@ return view.extend({
 				});
 		}, this);
 
+
+
+		// Modem Configuration (Device Settings Only)
+		s = m.section(form.GridSection, 'modem-device', _('Modem Devices'));
+		s.addremove = true;
+		s.anonymous = false;
+		s.sortable = true;
+		s.modaltitle = L.bind(function(section_id) {
+			var name = uci.get('qmodem', section_id, 'name');
+			return _('Modem Device') + ': ' + (name || section_id);
+		}, this);
+
+		o = s.option(form.Flag, 'enabled', _('Enabled'));
+		o.default = '1';
+		o.editable = true;
+
+		o = s.option(form.Value, 'name', _('Model Name'));
+		o.placeholder = 'RG500Q';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'alias', _('Alias'));
+		o.placeholder = 'Modem1';
+
+		o = s.option(form.Value, 'path', _('Device Path'));
+		o.placeholder = '/sys/bus/usb/devices/1-1';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'at_port', _('AT Port'));
+		o.placeholder = '/dev/ttyUSB2';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'sms_at_port', _('SMS AT Port'));
+		o.placeholder = '/dev/ttyUSB2';
+
+		o = s.option(form.Value, 'override_at_port', _('Override AT Port'));
+		o.placeholder = '/dev/ttyUSB3';
+
+		o = s.option(form.Flag, 'use_ubus', _('Use Ubus AT Daemon'));
+		o.default = '0';
 		// ===========================================
 		// Modem Slot Configuration
 		// ===========================================

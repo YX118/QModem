@@ -28,12 +28,12 @@
 			"path": "qmodem/overview"
 		}
 	},
-	"admin/modem/qmodem/config": {
-		"title": "Configuration",
+	"admin/modem/qmodem/network_config": {
+		"title": "NetworkConfiguration",
 		"order": 2,
 		"action": {
 			"type": "view",
-			"path": "qmodem/config"
+			"path": "qmodem/network_config"
 		}
 	},
 	"admin/modem/qmodem/debug": {
@@ -44,25 +44,17 @@
 			"path": "qmodem/debug"
 		}
 	},
-	"admin/modem/qmodem/config_advanced": {
-		"title": "Advanced Config",
+	"admin/modem/qmodem/config_modem_advanced": {
+		"title": "Advanced Modem Config",
 		"order": 4,
 		"action": {
 			"type": "view",
-			"path": "qmodem/config_advanced"
-		}
-	},
-	"admin/modem/qmodem/settings": {
-		"title": "Settings",
-		"order": 5,
-		"action": {
-			"type": "view",
-			"path": "qmodem/settings"
+			"path": "qmodem/config_modem_advanced"
 		}
 	},
 	"admin/modem/qmodem/sms": {
 		"title": "SMS Messages",
-		"order": 6,
+		"order": 5,
 		"action": {
 			"type": "view",
 			"path": "qmodem/sms"
@@ -79,6 +71,13 @@
 		},
 		"depends": {
 			"acl": [ "luci-app-qmodem-next" ]
+		}
+	},	"admin/modem/qmodem/settings": {
+		"title": "QModem Settings",
+		"order": 6,
+		"action": {
+			"type": "view",
+			"path": "qmodem/settings"
 		}
 	}
 }
