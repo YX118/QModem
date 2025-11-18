@@ -399,11 +399,11 @@ cell_info()
             add_bar_info_entry "RxLev" "$lte_rxlev" "Received Signal Level" -120 -25 dBm
             unset extra_info
             #NR
-            add_plain_info_entry "${nr_mode}_INFO" "$nr_mode" "$nr_mode Information"
-            add_plain_info_entry "${nr_mode}_BAND" "$NR_INFO_BAND" "NR Band"
-            add_plain_info_entry "${nr_mode}_DL" "$NR_INFO_DL" "$nr_mode DL"
-            add_plain_info_entry "${nr_mode}_UL" "$NR_INFO_UL" "$nr_mode UL"
             extra_info="$nr_mode"
+            add_plain_info_entry "${nr_mode}_INFO" "$nr_mode" "Information"
+            add_plain_info_entry "${nr_mode}_BAND" "$NR_INFO_BAND" "NR Band"
+            add_plain_info_entry "${nr_mode}_DL" "$NR_INFO_DL" "DL"
+            add_plain_info_entry "${nr_mode}_UL" "$NR_INFO_UL" "UL"
             add_bar_info_entry "RSRP" "$nr_rsrp" "Reference Signal Received Power" -156 -31 dBm
             add_bar_info_entry "RSRQ" "$nr_rsrq" "Reference Signal Received Quality" -43 20 dBm
             add_bar_info_entry "SINR" "$nr_sinr" "Signal to Interference plus Noise Ratio Bandwidth" -23 40 dBm
