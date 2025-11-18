@@ -1,0 +1,112 @@
+/* QModem Next - Additional Styles */
+
+.compat-progressbar {
+	border: 1px solid var(--border-color-high, var(--progressbarColor, var(--background-color)));
+	border-radius: 3px;
+	position: relative;
+	min-width: 170px;
+	height: 8px;
+	margin: 1.4em 0 4px 0;
+	background: var(--background-color-medium, var(--progressbarColor));
+}
+
+.compat-progressbar > div {
+	background: var(--progressbar, var(--primary, var(--primary-color-medium)));
+	height: 100%;
+	transition: width .25s ease-in;
+	width: 0%;
+	border-radius: 2px;
+}
+
+.compat-progressbar::before {
+	position: absolute;
+	top: -1.4em;
+	left: 0;
+	content: attr(title);
+	white-space: pre;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Advanced Config Tab Styles */
+.cbi-tabmenu {
+	list-style: none;
+	padding: 0;
+	margin: 0 0 1em 0;
+	display: flex;
+	flex-wrap: wrap;
+	border-bottom: 2px solid var(--border-color-medium, #cccccc);
+}
+
+.cbi-tabmenu li {
+	padding: 0.5rem 1rem;
+	margin: 0 0.25rem -2px 0;
+	cursor: pointer;
+	border: 1px solid transparent;
+	border-radius: 4px 4px 0 0;
+	background: var(--background-color-medium, #f5f5f5);
+	transition: all 0.2s;
+}
+
+.cbi-tabmenu li.cbi-tab {
+	background: var(--background-color-high, #ffffff);
+	border-color: var(--border-color-medium, #cccccc);
+	border-bottom-color: var(--background-color-high, #ffffff);
+	font-weight: bold;
+	color: var(--primary-color-medium, #0066cc);
+}
+
+.cbi-tabmenu li.cbi-tab-disabled {
+	color: var(--text-color-secondary, #666666);
+}
+
+.cbi-tabmenu li.cbi-tab-disabled:hover {
+	background: var(--background-color-high, #e8e8e8);
+	border-color: var(--border-color-low, #dddddd);
+}
+
+/* Dial Mode Radio Buttons and Network Preference Checkboxes */
+.cbi-value-field input[type="radio"],
+.cbi-value-field input[type="checkbox"] {
+	margin-right: 8px;
+	cursor: pointer;
+}
+
+.cbi-value-field label {
+	cursor: pointer;
+	user-select: none;
+}
+
+/* Lock Band Styles */
+.band-container {
+	display: flex;
+	align-items: center;
+	margin: 5px 15px 5px 0;
+	min-width: 100px;
+}
+
+#lockband_content_modem h3 {
+	color: var(--primary-color-medium, #0066cc);
+	border-bottom: 1px solid var(--border-color-low, #e0e0e0);
+	padding-bottom: 5px;
+}
+
+/* Neighbor Cell Table Styles */
+#neighbor_list_modem h4 {
+	color: var(--primary-color-medium, #0066cc);
+	margin: 10px 0 5px 0;
+	font-size: 1em;
+	font-weight: bold;
+}
+
+.cbi-section-table .label {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 3px;
+	font-weight: bold;
+	font-size: 0.9em;
+}
+
+.cbi-section-table-row:hover {
+	background-color: var(--background-color-medium, #f5f5f5);
+}

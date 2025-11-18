@@ -1,0 +1,284 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8"
+
+msgid "QModem"
+msgstr "QModem 调制解调器"
+
+msgid "Modem"
+msgstr "调制解调器"
+
+msgid "QModem Overview"
+msgstr "QModem 概览"
+
+msgid "QModem Configuration"
+msgstr "QModem 配置"
+
+msgid "QModem Settings"
+msgstr "QModem 设置"
+
+msgid "Modem Debug"
+msgstr "调制解调器调试"
+
+msgid "Overview"
+msgstr "概览"
+
+msgid "Configuration"
+msgstr "配置"
+
+msgid "Debug"
+msgstr "调试"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "Basic Information"
+msgstr "基本信息"
+
+msgid "Network Information"
+msgstr "网络信息"
+
+msgid "Cell Information"
+msgstr "小区信息"
+
+msgid "SIM Information"
+msgstr "SIM 卡信息"
+
+msgid "Actions"
+msgstr "操作"
+
+msgid "Soft Reboot"
+msgstr "软重启"
+
+msgid "Hard Reboot"
+msgstr "硬重启"
+
+msgid "Loading..."
+msgstr "加载中..."
+
+msgid "Failed to load information: %s"
+msgstr "加载信息失败：%s"
+
+msgid "No modem configured. Please go to Settings to configure your modem."
+msgstr "未配置调制解调器。请前往设置页面配置您的调制解调器。"
+
+msgid "No modem configured."
+msgstr "未配置调制解调器。"
+
+msgid "Modem: %s"
+msgstr "调制解调器：%s"
+
+msgid "Modem %s is rebooting..."
+msgstr "调制解调器 %s 正在重启..."
+
+msgid "Failed to reboot: %s"
+msgstr "重启失败：%s"
+
+msgid "AT Command Interface"
+msgstr "AT 命令接口"
+
+msgid "Available AT Ports"
+msgstr "可用 AT 端口"
+
+msgid "Current Port"
+msgstr "当前端口"
+
+msgid "Configured Ports"
+msgstr "已配置端口"
+
+msgid "Detected Ports"
+msgstr "检测到的端口"
+
+msgid "Select AT Port"
+msgstr "选择 AT 端口"
+
+msgid "AT Command"
+msgstr "AT 命令"
+
+msgid "Response"
+msgstr "响应"
+
+msgid "Send AT Command"
+msgstr "发送 AT 命令"
+
+msgid "Quick Commands"
+msgstr "快捷命令"
+
+msgid "Click \"Send AT Command\" to execute"
+msgstr "点击"发送 AT 命令"以执行"
+
+msgid "Error: Cannot find port or command input"
+msgstr "错误：无法找到端口或命令输入"
+
+msgid "Error: Please enter AT command"
+msgstr "错误：请输入 AT 命令"
+
+msgid "Sending command..."
+msgstr "正在发送命令..."
+
+msgid "No response received"
+msgstr "未收到响应"
+
+msgid "Error: %s"
+msgstr "错误：%s"
+
+msgid "Modems"
+msgstr "调制解调器"
+
+msgid "Enabled"
+msgstr "启用"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "Device Path"
+msgstr "设备路径"
+
+msgid "Manufacturer"
+msgstr "制造商"
+
+msgid "Platform"
+msgstr "平台"
+
+msgid "AT Port"
+msgstr "AT 端口"
+
+msgid "Override AT Port"
+msgstr "覆盖 AT 端口"
+
+msgid "SMS AT Port"
+msgstr "短信 AT 端口"
+
+msgid "Data Interface"
+msgstr "数据接口"
+
+msgid "PDP Context Index"
+msgstr "PDP 上下文索引"
+
+msgid "Protocol"
+msgstr "协议"
+
+msgid "Use Ubus AT Daemon"
+msgstr "使用 Ubus AT 守护进程"
+
+msgid "Auto APN"
+msgstr "自动 APN"
+
+msgid "APN"
+msgstr "接入点名称(APN)"
+
+msgid "Username"
+msgstr "用户名"
+
+msgid "Password"
+msgstr "密码"
+
+msgid "Authentication"
+msgstr "认证方式"
+
+msgid "None"
+msgstr "无"
+
+msgid "Metric"
+msgstr "跃点数"
+
+msgid "Enable IPv6"
+msgstr "启用 IPv6"
+
+msgid "Dial Configuration"
+msgstr "拨号配置"
+
+msgid "Enable Auto Dial"
+msgstr "启用自动拨号"
+
+msgid "Dial Check Interval (seconds)"
+msgstr "拨号检查间隔（秒）"
+
+msgid "Retry Count"
+msgstr "重试次数"
+
+msgid "Connection Timeout (seconds)"
+msgstr "连接超时（秒）"
+
+msgid "Global Settings"
+msgstr "全局设置"
+
+msgid "Enable QModem"
+msgstr "启用 QModem"
+
+msgid "Debug Mode"
+msgstr "调试模式"
+
+msgid "Log File"
+msgstr "日志文件"
+
+msgid "Log Level"
+msgstr "日志级别"
+
+msgid "Error"
+msgstr "错误"
+
+msgid "Warning"
+msgstr "警告"
+
+msgid "Info"
+msgstr "信息"
+
+msgid "Modem Scan Interval (seconds)"
+msgstr "调制解调器扫描间隔（秒）"
+
+msgid "Auto Detect Modems"
+msgstr "自动检测调制解调器"
+
+msgid "Network Settings"
+msgstr "网络设置"
+
+msgid "MTU"
+msgstr "MTU"
+
+msgid "Enable NAT"
+msgstr "启用 NAT"
+
+msgid "Enable Masquerading"
+msgstr "启用伪装"
+
+msgid "SMS Settings"
+msgstr "短信设置"
+
+msgid "Enable SMS"
+msgstr "启用短信"
+
+msgid "SMS Storage"
+msgstr "短信存储"
+
+msgid "SIM Card"
+msgstr "SIM 卡"
+
+msgid "Device Memory"
+msgstr "设备内存"
+
+msgid "All Storage"
+msgstr "所有存储"
+
+msgid "Auto Delete Read SMS"
+msgstr "自动删除已读短信"
+
+msgid "Check Interval (seconds)"
+msgstr "检查间隔（秒）"
+
+msgid "Advanced Settings"
+msgstr "高级设置"
+
+msgid "Script Path"
+msgstr "脚本路径"
+
+msgid "Runtime Path"
+msgstr "运行时路径"
+
+msgid "Use Ubus AT Daemon"
+msgstr "使用 Ubus AT 守护进程"
+
+msgid "AT Command Timeout (ms)"
+msgstr "AT 命令超时（毫秒）"
+
+msgid "Maximum Retry Count"
+msgstr "最大重试次数"

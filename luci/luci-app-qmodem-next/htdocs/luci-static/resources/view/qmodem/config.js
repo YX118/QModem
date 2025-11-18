@@ -1,0 +1,632 @@
+'use strict';
+'require view';
+'require form';
+'require uci';
+'require rpc';
+'require ui';
+'require qmodem.qmodem as qmodem';
+'require dom';
+'require poll';
+
+var callInitAction = rpc.declare({
+	object: 'luci',
+	method: 'setInitAction',
+	params: ['name', 'action'],
+	expect: { result: false }
+});
+
+return view.extend({
+	load: function() {
+		return uci.load('qmodem');
+	},
+
+	render: function() {
+		var m, s, o;
+
+		m = new form.Map('qmodem', _('QModem Configuration'));
+
+		// Global Dial Configuration
+		s = m.section(form.NamedSection, 'main', 'main', _('Global Configuration'));
+
+		o = s.option(form.Flag, 'enable_dial', _('Enable Dial (Global)'));
+		o.default = '1';
+		o.rmempty = false;
+
+		// QModem network RC status and control
+		var rcStatus = s.option(form.DummyValue, '_rc_status', _('QModem Network'));
+		rcStatus.rawhtml = true;
+		rcStatus.cfgvalue = function() {
+			return E('div', { id: 'rc-status-container' }, [
+				E('span', {}, _('Loading...'))
+			]);
+		};
+
+		var rcControl = s.option(form.DummyValue, '_rc_control', _('Control'));
+		rcControl.rawhtml = true;
+		rcControl.cfgvalue = L.bind(function() {
+			return E('div', { id: 'rc-control-container' }, [
+				E('button', {
+					'class': 'cbi-button cbi-button-action',
+					'id': 'rc-enable-button',
+					'style': 'display: none;',
+					'click': ui.createHandlerFn(this, function() {
+						var self = this;
+						return callInitAction('qmodem_network', 'enable')
+							.then(function() {
+								return callInitAction('qmodem_network', 'start');
+							})
+							.then(function() {
+								ui.addNotification(null, E('p', _('QModem Network started successfully')));
+								return self.updateRcStatus();
+							})
+							.catch(function(err) {
+								ui.addNotification(null, E('p', _('Failed to start QModem Network: ') + err.message), 'error');
+								return self.updateRcStatus();
+							});
+					})
+				}, _('Enable')),
+				' ',
+				E('button', {
+					'class': 'cbi-button cbi-button-reset',
+					'id': 'rc-disable-button',
+					'style': 'display: none;',
+					'click': ui.createHandlerFn(this, function() {
+						var self = this;
+						return callInitAction('qmodem_network', 'stop')
+							.then(function() {
+								return callInitAction('qmodem_network', 'disable');
+							})
+							.then(function() {
+								ui.addNotification(null, E('p', _('QModem Network stopped successfully')));
+								return self.updateRcStatus();
+							})
+							.catch(function(err) {
+								ui.addNotification(null, E('p', _('Failed to stop QModem Network: ') + err.message), 'error');
+								return self.updateRcStatus();
+							});
+					})
+				}, _('Disable'))
+			]);
+		}, this);
+
+		// Modem Basic Configuration (Device Settings Only)
+		s = m.section(form.GridSection, 'modem-device', _('Modem Devices'));
+		s.addremove = true;
+		s.anonymous = false;
+		s.sortable = true;
+		s.modaltitle = L.bind(function(section_id) {
+			var name = uci.get('qmodem', section_id, 'name');
+			return _('Modem Device') + ': ' + (name || section_id);
+		}, this);
+
+		o = s.option(form.Flag, 'enabled', _('Enabled'));
+		o.default = '1';
+		o.editable = true;
+
+		o = s.option(form.Value, 'name', _('Model Name'));
+		o.placeholder = 'RG500Q';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'alias', _('Alias'));
+		o.placeholder = 'Modem1';
+
+		o = s.option(form.Value, 'path', _('Device Path'));
+		o.placeholder = '/sys/bus/usb/devices/1-1';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'at_port', _('AT Port'));
+		o.placeholder = '/dev/ttyUSB2';
+		o.rmempty = false;
+
+		o = s.option(form.Value, 'sms_at_port', _('SMS AT Port'));
+		o.placeholder = '/dev/ttyUSB2';
+
+		o = s.option(form.Value, 'override_at_port', _('Override AT Port'));
+		o.placeholder = '/dev/ttyUSB3';
+
+		o = s.option(form.Flag, 'use_ubus', _('Use Ubus AT Daemon'));
+		o.default = '0';
+
+	// Dial Configuration Section (Per-Modem)
+	s = m.section(form.GridSection, 'modem-device', _('Dial Configuration'));
+	s.anonymous = false;
+	s.addremove = false;
+	s.modaltitle = L.bind(function(section_id) {
+		var name = uci.get('qmodem', section_id, 'name');
+		var alias = uci.get('qmodem', section_id, 'alias');
+		return _('Dial Configuration') + ': ' + (alias || name || section_id);
+	}, this);
+
+	// Connection Status Indicator
+	o = s.option(form.DummyValue, '_status_indicator', _('Status'));
+	o.rawhtml = true;
+	o.editable = true;
+	o.width = '60px';
+	o.cfgvalue = function(section_id) {
+		return E('div', {
+			'id': 'status-indicator-' + section_id,
+			'style': 'text-align: center;'
+		}, [
+			E('span', {
+				'style': 'display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: #999;'
+			})
+		]);
+	};
+
+	o = s.option(form.Flag, 'enable_dial', _('Enable Dial'));
+		o.default = '0';
+		o.rmempty = false;
+		o.editable = true;
+
+		o = s.option(form.DummyValue, 'name', _('Modem Model'));
+		o.cfgvalue = function(section_id) {
+			var name = uci.get('qmodem', section_id, 'name') || '';
+			return name.toUpperCase();
+		};
+
+		o = s.option(form.DummyValue, 'alias', _('Modem Alias'));
+		o.cfgvalue = function(section_id) {
+			return uci.get('qmodem', section_id, 'alias') || '-';
+		};
+
+	o = s.option(form.DummyValue, 'state', _('Status'));
+	o.cfgvalue = function(section_id) {
+		var state = uci.get('qmodem', section_id, 'state');
+		return state ? _(state.toUpperCase()) : _('Unknown');
+	};
+
+	// Dial Log View Button
+	o = s.option(form.DummyValue, '_dial_log', _('Dial Log'));
+	o.rawhtml = true;
+	o.modalonly = false;
+	o.editable = true;
+	o.cfgvalue = L.bind(function(section_id) {
+		var enable_dial = uci.get('qmodem', section_id, 'enable_dial');
+		if (enable_dial === '0') {
+			return E('span', {}, '-');
+		}
+		
+		return E('button', {
+			'class': 'cbi-button cbi-button-action',
+			'click': ui.createHandlerFn(this, function(section_id) {
+				this.showDialLogDialog(section_id);
+			}, section_id)
+		}, _('View Log'));
+	}, this);
+
+	// Dial Control Buttons
+	o = s.option(form.DummyValue, '_dial_controls', _('Dial Control'));
+		o.rawhtml = true;
+		o.modalonly = false;
+		o.editable = true;
+		o.cfgvalue = function(section_id) {
+			var enable_dial = uci.get('qmodem', section_id, 'enable_dial');
+			if (enable_dial === '0') {
+				return E('div', {}, _('Dial disabled for this modem'));
+			}
+			
+			return E('div', { 
+				'class': 'cbi-value-field', 
+				'id': 'dial-controls-' + section_id,
+				'data-section': section_id
+			}, [
+				E('span', {}, _('Loading...'))
+			]);
+		};
+
+		o = s.option(form.ListValue, 'pdp_type', _('PDP Type'));
+		o.value('ip', _('IPv4'));
+		o.value('ipv6', _('IPv6'));
+		o.value('ipv4v6', _('IPv4/IPv6'));
+		o.default = '0';
+		o.modalonly = true;
+
+		o = s.option(form.Flag, 'extend_prefix', _('Extend Prefix'));
+		o.default = '0';
+		o.modalonly = true;
+
+		o = s.option(form.Flag, 'soft_reboot', _('Soft Reboot'));
+		o.default = '0';
+		o.modalonly = true;
+
+		// Slot 2 configuration
+		o = s.option(form.Value, 'apn2', _('APN') + ' 2');
+		o.placeholder = _('Use Slot 1 Config');
+		o.rmempty = true;
+		o.modalonly = true;
+
+		return m.render().then(L.bind(function(rendered) {
+			// Update dial controls for all modems
+			this.updateAllDialControls();
+			// Update connection status indicators
+			this.updateAllStatusIndicators();
+			// Start polling for dial status
+			this.startDialStatusPolling();
+			// Start polling for connection status
+			this.startStatusIndicatorPolling();
+			// Update RC status and start polling
+			this.updateRcStatus();
+			this.startRcStatusPolling();
+			return rendered;
+		}, this));
+	},
+
+	updateDialControls: function(section_id, isRunning) {
+		var container = document.getElementById('dial-controls-' + section_id);
+		if (!container) return;
+
+		// Clear existing content
+		while (container.firstChild) {
+			container.removeChild(container.firstChild);
+		}
+
+		var buttons = [];
+		
+		if (isRunning) {
+			// Show Hang and ReDial buttons when service is running
+			buttons.push(
+				E('button', {
+					'class': 'cbi-button cbi-button-reset',
+					'click': ui.createHandlerFn(this, function(section_id) {
+						return qmodem.modemHang(section_id).then(L.bind(function(result) {
+							if (result && result.result && result.result.status === '1') {
+								ui.addNotification(null, E('p', _('Hang command sent successfully')));
+								// Update status after hang
+								setTimeout(L.bind(function() {
+									this.updateDialControlsForSection(section_id);
+								}, this), 1000);
+							} else {
+								ui.addNotification(null, E('p', _('Failed to send hang command')), 'error');
+							}
+						}, this)).catch(function(err) {
+							ui.addNotification(null, E('p', _('Error: ') + err.message), 'error');
+						});
+					}, section_id)
+				}, _('Hang')),
+				E('button', {
+					'class': 'cbi-button cbi-button-apply',
+					'click': ui.createHandlerFn(this, function(section_id) {
+						return qmodem.modemRedial(section_id).then(function(result) {
+							if (result && result.result && result.result.status === '1') {
+								ui.addNotification(null, E('p', _('Redial command sent successfully')));
+							} else {
+								ui.addNotification(null, E('p', _('Failed to send redial command')), 'error');
+							}
+						}).catch(function(err) {
+							ui.addNotification(null, E('p', _('Error: ') + err.message), 'error');
+						});
+					}, section_id)
+				}, _('ReDial'))
+			);
+		} else {
+			// Show Dial button when service is not running
+			buttons.push(
+				E('button', {
+					'class': 'cbi-button cbi-button-action',
+					'click': ui.createHandlerFn(this, function(section_id) {
+						return qmodem.modemDial(section_id).then(L.bind(function(result) {
+							if (result && result.result && result.result.status === '1') {
+								ui.addNotification(null, E('p', _('Dial command sent successfully')));
+								// Update status after dial
+								setTimeout(L.bind(function() {
+									this.updateDialControlsForSection(section_id);
+								}, this), 1000);
+							} else {
+								ui.addNotification(null, E('p', _('Failed to send dial command')), 'error');
+							}
+						}, this)).catch(function(err) {
+							ui.addNotification(null, E('p', _('Error: ') + err.message), 'error');
+						});
+					}, section_id)
+				}, _('Dial'))
+			);
+		}
+
+		buttons.forEach(function(btn) {
+			container.appendChild(btn);
+		});
+	},
+
+	updateDialControlsForSection: function(section_id) {
+		return qmodem.getDialStatus(section_id).then(L.bind(function(result) {
+			if (result && result.running !== undefined) {
+				var isRunning = (result.running === 'true' || result.running === true);
+				this.updateDialControls(section_id, isRunning);
+			}
+		}, this)).catch(function(err) {
+			console.error('Failed to get dial status for ' + section_id + ':', err);
+		});
+	},
+
+	updateAllDialControls: function() {
+		var sections = uci.sections('qmodem', 'modem-device');
+		sections.forEach(L.bind(function(section) {
+			var enable_dial = uci.get('qmodem', section['.name'], 'enable_dial');
+			if (enable_dial !== '0') {
+				this.updateDialControlsForSection(section['.name']);
+			}
+		}, this));
+	},
+
+	startDialStatusPolling: function() {
+		poll.add(L.bind(function() {
+			this.updateAllDialControls();
+		}, this), 5);
+	},
+
+	updateStatusIndicator: function(section_id) {
+		var container = document.getElementById('status-indicator-' + section_id);
+		if (!container) return;
+
+		return qmodem.getConnectStatus(section_id).then(function(result) {
+			var color = '#FFA500'; // Yellow (default for error/unknown)
+			var title = _('Unknown');
+
+			if (result && result.connection_status !== undefined) {
+				var status = result.connection_status;
+				status = status.toString().toLowerCase();
+				if (status === 'yes' || status === 'true' || status === true) {
+					color = '#00FF00'; // Green (connected)
+					title = _('Connected');
+				} else if (status === 'no' || status === 'false' || status === false) {
+					color = '#FF0000'; // Red (disconnected)
+					title = _('Disconnected');
+				}
+			}
+
+			// Update the dot color
+			while (container.firstChild) {
+				container.removeChild(container.firstChild);
+			}
+			container.appendChild(
+				E('span', {
+					'style': 'display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ' + color + ';',
+					'title': title
+				})
+			);
+		}).catch(function(err) {
+			// On error, show yellow dot
+			while (container.firstChild) {
+				container.removeChild(container.firstChild);
+			}
+			container.appendChild(
+				E('span', {
+					'style': 'display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: #FFA500;',
+					'title': _('Error: ') + err.message
+				})
+			);
+		});
+	},
+
+	updateAllStatusIndicators: function() {
+		var sections = uci.sections('qmodem', 'modem-device');
+		sections.forEach(L.bind(function(section) {
+			this.updateStatusIndicator(section['.name']);
+		}, this));
+	},
+
+	startStatusIndicatorPolling: function() {
+		poll.add(L.bind(function() {
+			this.updateAllStatusIndicators();
+		}, this), 5);
+	},
+
+	startRcStatusPolling: function() {
+		poll.add(L.bind(function() {
+			this.updateRcStatus();
+		}, this), 10);
+	},
+
+	updateRcStatus: function() {
+		var container = document.getElementById('rc-status-container');
+		var enableButton = document.getElementById('rc-enable-button');
+		var disableButton = document.getElementById('rc-disable-button');
+
+		if (!container || !enableButton || !disableButton) {
+			return;
+		}
+
+		enableButton.disabled = true;
+		disableButton.disabled = true;
+
+		var finalize = function() {
+			enableButton.disabled = false;
+			disableButton.disabled = false;
+		};
+
+		return qmodem.rcStatus('qmodem_network').then(L.bind(function(result) {
+			var status = result && result.qmodem_network ? result.qmodem_network : null;
+
+			while (container.firstChild) {
+				container.removeChild(container.firstChild);
+			}
+
+			if (status) {
+				var enabled = status.enabled === true || status.enabled === 'true';
+				var running = status.running === true || status.running === 'true';
+
+				container.appendChild(E('div', {}, [
+					E('span', {}, _('Enabled') + ': ' + (enabled ? _('Yes') : _('No'))),
+					E('span', { 'style': 'margin-left: 12px;' }, _('Running') + ': ' + (running ? _('Yes') : _('No')))
+				]));
+
+				if (running) {
+					enableButton.style.display = 'none';
+					disableButton.style.display = '';
+				} else {
+					enableButton.style.display = '';
+					disableButton.style.display = 'none';
+				}
+			} else {
+				container.appendChild(E('span', {}, _('Failed to load status')));
+			}
+
+			finalize();
+		}, this)).catch(function(err) {
+			while (container.firstChild) {
+				container.removeChild(container.firstChild);
+			}
+			container.appendChild(E('span', {}, _('Error: ') + err.message));
+			finalize();
+		});
+	},
+
+	showDialLogDialog: function(section_id) {
+		var name = uci.get('qmodem', section_id, 'name');
+		var alias = uci.get('qmodem', section_id, 'alias');
+		var title = (alias || name || section_id) + ' - ' + _('Dial Log');
+		
+		var logContent = E('div', { 'style': 'min-height: 300px;' }, [
+			E('div', { 'style': 'text-align: center; padding: 20px;' }, [
+				E('span', { 'class': 'spinning' }, _('Loading...'))
+			])
+		]);
+
+		var dialog = ui.showModal(title, [
+			E('style', {}, '\
+				.dial-log-content { \
+					background: #f5f5f5; \
+					padding: 10px; \
+					border: 1px solid #ddd; \
+					border-radius: 3px; \
+					max-height: 400px; \
+					overflow-y: auto; \
+					font-family: monospace; \
+					font-size: 12px; \
+					white-space: pre-wrap; \
+					word-wrap: break-word; \
+				} \
+				.dial-log-empty { \
+					text-align: center; \
+					padding: 40px; \
+					color: #999; \
+				}'),
+			logContent,
+			E('div', { 'class': 'right' }, [
+				E('button', {
+					'class': 'cbi-button cbi-button-action',
+					'click': L.bind(function() {
+						this.downloadDialLog(section_id);
+					}, this)
+				}, _('Download')),
+				' ',
+				E('button', {
+					'class': 'cbi-button cbi-button-reset',
+					'click': L.bind(function() {
+						this.clearDialLogDialog(section_id, logContent);
+					}, this)
+				}, _('Clear')),
+				' ',
+				E('button', {
+					'class': 'cbi-button cbi-button-neutral',
+					'click': ui.hideModal
+				}, _('Close'))
+			])
+		], 'cbi-modal');
+
+		// Load log content
+		this.loadDialLog(section_id, logContent);
+	},
+
+	loadDialLog: function(section_id, container) {
+		return qmodem.getDialLog(section_id).then(function(result) {
+			while (container.firstChild) {
+				container.removeChild(container.firstChild);
+			}
+
+			if (result && result.log) {
+				if (result.log.trim() === '') {
+					container.appendChild(
+						E('div', { 'class': 'dial-log-empty' }, _('No log available'))
+					);
+				} else {
+					container.appendChild(
+						E('pre', { 'class': 'dial-log-content' }, result.log)
+					);
+				}
+			} else {
+				container.appendChild(
+					E('div', { 'class': 'dial-log-empty' }, _('Failed to load log'))
+				);
+			}
+		}).catch(function(err) {
+			while (container.firstChild) {
+				container.removeChild(container.firstChild);
+			}
+			container.appendChild(
+				E('div', { 'class': 'dial-log-empty' }, _('Error: ') + err.message)
+			);
+		});
+	},
+
+	downloadDialLog: function(section_id) {
+		return qmodem.getDialLog(section_id).then(function(result) {
+			if (result && result.log) {
+				var name = uci.get('qmodem', section_id, 'name') || section_id;
+				var alias = uci.get('qmodem', section_id, 'alias') || '';
+				var filename = 'dial_log_' + (alias || name) + '_' + 
+					new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + '.txt';
+				
+				var blob = new Blob([result.log], { type: 'text/plain' });
+				var url = window.URL.createObjectURL(blob);
+				var a = document.createElement('a');
+				a.href = url;
+				a.download = filename;
+				document.body.appendChild(a);
+				a.click();
+				window.URL.revokeObjectURL(url);
+				document.body.removeChild(a);
+				
+				ui.addNotification(null, E('p', _('Log downloaded successfully')));
+			} else {
+				ui.addNotification(null, E('p', _('No log content to download')), 'warning');
+			}
+		}).catch(function(err) {
+			ui.addNotification(null, E('p', _('Failed to download log: ') + err.message), 'error');
+		});
+	},
+
+	clearDialLogDialog: function(section_id, container) {
+		ui.showModal(_('Clear Dial Log'), [
+			E('p', {}, _('Are you sure you want to clear the dial log?')),
+			E('div', { 'class': 'right' }, [
+				E('button', {
+					'class': 'cbi-button cbi-button-neutral',
+					'click': ui.hideModal
+				}, _('Cancel')),
+				' ',
+				E('button', {
+					'class': 'cbi-button cbi-button-negative',
+					'click': L.bind(function() {
+						qmodem.clearDialLog(section_id).then(L.bind(function(result) {
+							if (result && result.result && result.result.status === '1') {
+								ui.addNotification(null, E('p', _('Log cleared successfully')));
+								ui.hideModal();
+								// Reload the main dialog
+								setTimeout(L.bind(function() {
+									this.showDialLogDialog(section_id);
+								}, this), 300);
+							} else {
+								ui.addNotification(null, E('p', _('Failed to clear log')), 'error');
+								ui.hideModal();
+							}
+						}, this)).catch(function(err) {
+							ui.addNotification(null, E('p', _('Error: ') + err.message), 'error');
+							ui.hideModal();
+						});
+					}, this)
+				}, _('Confirm'))
+			])
+		]);
+	},
+
+	handleSaveApply: function(ev, mode) {
+		return this.handleSave(ev).then(function() {
+			return callInitAction('qmodem_network', 'reload');
+		});
+	},
+
+	handleSave: function(ev) {
+		return this.super('handleSave', arguments);
+	}
+});

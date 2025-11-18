@@ -1,0 +1,63 @@
+{
+	"admin/modem": {
+		"title": "Modem",
+		"order": 25,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-qmodem-next" ]
+		}
+	},
+	"admin/modem/qmodem": {
+		"title": "QModem",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "qmodem/overview"
+		},
+		"depends": {
+			"acl": [ "luci-app-qmodem-next" ]
+		}
+	},
+	"admin/modem/qmodem/overview": {
+		"title": "Overview",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "qmodem/overview"
+		}
+	},
+	"admin/modem/qmodem/config": {
+		"title": "Configuration",
+		"order": 2,
+		"action": {
+			"type": "view",
+			"path": "qmodem/config"
+		}
+	},
+	"admin/modem/qmodem/debug": {
+		"title": "AT Debug",
+		"order": 3,
+		"action": {
+			"type": "view",
+			"path": "qmodem/debug"
+		}
+	},
+	"admin/modem/qmodem/config_advanced": {
+		"title": "Advanced Config",
+		"order": 4,
+		"action": {
+			"type": "view",
+			"path": "qmodem/config_advanced"
+		}
+	},
+	"admin/modem/qmodem/settings": {
+		"title": "Settings",
+		"order": 5,
+		"action": {
+			"type": "view",
+			"path": "qmodem/settings"
+		}
+	}
+}
