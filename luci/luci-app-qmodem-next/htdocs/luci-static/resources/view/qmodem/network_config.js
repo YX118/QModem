@@ -17,7 +17,32 @@ var callInitAction = rpc.declare({
 
 return view.extend({
 	load: function() {
-		return uci.load('qmodem');
+		return Promise.all([
+			uci.load('qmodem'),
+			qmodem.rcStatus('qmodem_network')
+		]).then(L.bind(function(results) {
+			this.rcStatusData = results[1];
+			
+			// Load connection status for all modem devices
+			var sections = uci.sections('qmodem', 'modem-device');
+			var statusPromises = sections.map(function(section) {
+				return qmodem.getConnectStatus(section['.name'])
+					.then(function(status) {
+						return { section_id: section['.name'], status: status };
+					})
+					.catch(function(err) {
+						return { section_id: section['.name'], status: null };
+					});
+			});
+			
+			return Promise.all(statusPromises).then(L.bind(function(statuses) {
+				this.connectionStatusData = {};
+				statuses.forEach(L.bind(function(item) {
+					this.connectionStatusData[item.section_id] = item.status;
+				}, this));
+				return results;
+			}, this));
+		}, this));
 	},
 
 	render: function() {
@@ -35,58 +60,118 @@ return view.extend({
 		// QModem network RC status and control
 		var rcStatus = s.option(form.DummyValue, '_rc_status', _('QModem Network'));
 		rcStatus.rawhtml = true;
-		rcStatus.cfgvalue = function() {
+		rcStatus.cfgvalue = L.bind(function() {
+			var status = this.rcStatusData && this.rcStatusData.qmodem_network ? this.rcStatusData.qmodem_network : null;
+			
+			if (!status) {
+				return E('div', { id: 'rc-status-container' }, [
+					E('span', {}, _('Failed to load status'))
+				]);
+			}
+			
+			var enabled = status.enabled === true || status.enabled === 'true';
+			var running = status.running === true || status.running === 'true';
+			
 			return E('div', { id: 'rc-status-container' }, [
-				E('span', {}, _('Loading...'))
+				E('span', {}, _('Enabled') + ': ' + (enabled ? _('Yes') : _('No'))),
+				E('span', { 'style': 'margin-left: 12px;' }, _('Running') + ': ' + (running ? _('Yes') : _('No')))
 			]);
-		};
+		}, this);
 
 		var rcControl = s.option(form.DummyValue, '_rc_control', _('Control'));
 		rcControl.rawhtml = true;
 		rcControl.cfgvalue = L.bind(function() {
-			return E('div', { id: 'rc-control-container' }, [
-				E('button', {
-					'class': 'cbi-button cbi-button-action',
-					'id': 'rc-enable-button',
-					'style': 'display: none;',
-					'click': ui.createHandlerFn(this, function() {
-						var self = this;
-						return callInitAction('qmodem_network', 'enable')
-							.then(function() {
-								return callInitAction('qmodem_network', 'start');
-							})
-							.then(function() {
-								ui.addNotification(null, E('p', _('QModem Network started successfully')));
-								return self.updateRcStatus();
-							})
-							.catch(function(err) {
-								ui.addNotification(null, E('p', _('Failed to start QModem Network: ') + err.message), 'error');
-								return self.updateRcStatus();
-							});
-					})
-				}, _('Enable')),
-				' ',
-				E('button', {
-					'class': 'cbi-button cbi-button-reset',
-					'id': 'rc-disable-button',
-					'style': 'display: none;',
-					'click': ui.createHandlerFn(this, function() {
-						var self = this;
-						return callInitAction('qmodem_network', 'stop')
-							.then(function() {
-								return callInitAction('qmodem_network', 'disable');
-							})
-							.then(function() {
-								ui.addNotification(null, E('p', _('QModem Network stopped successfully')));
-								return self.updateRcStatus();
-							})
-							.catch(function(err) {
-								ui.addNotification(null, E('p', _('Failed to stop QModem Network: ') + err.message), 'error');
-								return self.updateRcStatus();
-							});
-					})
-				}, _('Disable'))
-			]);
+			var status = this.rcStatusData && this.rcStatusData.qmodem_network ? this.rcStatusData.qmodem_network : null;
+			var enabled = status ? (status.enabled === true || status.enabled === 'true') : false;
+			var running = status ? (status.running === true || status.running === 'true') : false;
+			
+			var buttons = [];
+			
+			// Running control: show Start if not running, show Stop if running
+			if (!running) {
+				buttons.push(
+					E('button', {
+						'class': 'cbi-button cbi-button-action',
+						'id': 'rc-start-button',
+						'click': ui.createHandlerFn(this, function() {
+							var self = this;
+							return callInitAction('qmodem_network', 'start')
+								.then(function() {
+									ui.addNotification(null, E('p', _('QModem Network started successfully')));
+									return self.updateRcStatus();
+								})
+								.catch(function(err) {
+									ui.addNotification(null, E('p', _('Failed to start QModem Network: ') + err.message), 'error');
+									return self.updateRcStatus();
+								});
+						})
+					}, _('Start'))
+				);
+			} else {
+				buttons.push(
+					E('button', {
+						'class': 'cbi-button cbi-button-reset',
+						'id': 'rc-stop-button',
+						'click': ui.createHandlerFn(this, function() {
+							var self = this;
+							return callInitAction('qmodem_network', 'stop')
+								.then(function() {
+									ui.addNotification(null, E('p', _('QModem Network stopped successfully')));
+									return self.updateRcStatus();
+								})
+								.catch(function(err) {
+									ui.addNotification(null, E('p', _('Failed to stop QModem Network: ') + err.message), 'error');
+									return self.updateRcStatus();
+								});
+						})
+					}, _('Stop'))
+				);
+			}
+			
+			buttons.push(E('span', { 'style': 'margin: 0 8px;' }, ' | '));
+			
+			// Enabled control: show Enable if not enabled, show Disable if enabled
+			if (!enabled) {
+				buttons.push(
+					E('button', {
+						'class': 'cbi-button cbi-button-apply',
+						'id': 'rc-enable-button',
+						'click': ui.createHandlerFn(this, function() {
+							var self = this;
+							return callInitAction('qmodem_network', 'enable')
+								.then(function() {
+									ui.addNotification(null, E('p', _('QModem Network enabled successfully')));
+									return self.updateRcStatus();
+								})
+								.catch(function(err) {
+									ui.addNotification(null, E('p', _('Failed to enable QModem Network: ') + err.message), 'error');
+									return self.updateRcStatus();
+								});
+						})
+					}, _('Enable'))
+				);
+			} else {
+				buttons.push(
+					E('button', {
+						'class': 'cbi-button cbi-button-negative',
+						'id': 'rc-disable-button',
+						'click': ui.createHandlerFn(this, function() {
+							var self = this;
+							return callInitAction('qmodem_network', 'disable')
+								.then(function() {
+									ui.addNotification(null, E('p', _('QModem Network disabled successfully')));
+									return self.updateRcStatus();
+								})
+								.catch(function(err) {
+									ui.addNotification(null, E('p', _('Failed to disable QModem Network: ') + err.message), 'error');
+									return self.updateRcStatus();
+								});
+						})
+					}, _('Disable'))
+				);
+			}
+			
+			return E('div', { id: 'rc-control-container' }, buttons);
 		}, this);
 
 	// Dial Configuration Section (Per-Modem)
@@ -104,16 +189,38 @@ return view.extend({
 	o.rawhtml = true;
 	o.editable = true;
 	o.width = '60px';
-	o.cfgvalue = function(section_id) {
+	o.cfgvalue = L.bind(function(section_id) {
+		var color = '#999'; // Gray (default/loading)
+		var title = _('Loading...');
+		
+		// Use preloaded data if available
+		if (this.connectionStatusData && this.connectionStatusData[section_id]) {
+			var result = this.connectionStatusData[section_id];
+			if (result && result.connection_status !== undefined) {
+				var status = result.connection_status.toString().toLowerCase();
+				if (status === 'yes' || status === 'true' || status === true) {
+					color = '#00FF00'; // Green (connected)
+					title = _('Connected');
+				} else if (status === 'no' || status === 'false' || status === false) {
+					color = '#FF0000'; // Red (disconnected)
+					title = _('Disconnected');
+				} else {
+					color = '#FFA500'; // Yellow (unknown)
+					title = _('Unknown');
+				}
+			}
+		}
+		
 		return E('div', {
 			'id': 'status-indicator-' + section_id,
 			'style': 'text-align: center;'
 		}, [
 			E('span', {
-				'style': 'display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: #999;'
+				'style': 'display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ' + color + ';',
+				'title': title
 			})
 		]);
-	};
+	}, this);
 
 	o = s.option(form.Flag, 'enable_dial', _('Enable Dial'));
 		o.default = '0';
@@ -206,8 +313,7 @@ return view.extend({
 			this.startDialStatusPolling();
 			// Start polling for connection status
 			this.startStatusIndicatorPolling();
-			// Update RC status and start polling
-			this.updateRcStatus();
+			// Start polling for RC status
 			this.startRcStatusPolling();
 			return rendered;
 		}, this));
@@ -320,7 +426,13 @@ return view.extend({
 		var container = document.getElementById('status-indicator-' + section_id);
 		if (!container) return;
 
-		return qmodem.getConnectStatus(section_id).then(function(result) {
+		return qmodem.getConnectStatus(section_id).then(L.bind(function(result) {
+			// Update cached data
+			if (!this.connectionStatusData) {
+				this.connectionStatusData = {};
+			}
+			this.connectionStatusData[section_id] = result;
+			
 			var color = '#FFA500'; // Yellow (default for error/unknown)
 			var title = _('Unknown');
 
@@ -346,7 +458,7 @@ return view.extend({
 					'title': title
 				})
 			);
-		}).catch(function(err) {
+		}, this)).catch(function(err) {
 			// On error, show yellow dot
 			while (container.firstChild) {
 				container.removeChild(container.firstChild);
@@ -380,57 +492,134 @@ return view.extend({
 	},
 
 	updateRcStatus: function() {
-		var container = document.getElementById('rc-status-container');
-		var enableButton = document.getElementById('rc-enable-button');
-		var disableButton = document.getElementById('rc-disable-button');
+		var statusContainer = document.getElementById('rc-status-container');
+		var controlContainer = document.getElementById('rc-control-container');
 
-		if (!container || !enableButton || !disableButton) {
-			return;
+		if (!statusContainer || !controlContainer) {
+			return Promise.resolve();
 		}
 
-		enableButton.disabled = true;
-		disableButton.disabled = true;
-
-		var finalize = function() {
-			enableButton.disabled = false;
-			disableButton.disabled = false;
-		};
-
 		return qmodem.rcStatus('qmodem_network').then(L.bind(function(result) {
+			this.rcStatusData = result;
 			var status = result && result.qmodem_network ? result.qmodem_network : null;
 
-			while (container.firstChild) {
-				container.removeChild(container.firstChild);
+			// Update status display
+			while (statusContainer.firstChild) {
+				statusContainer.removeChild(statusContainer.firstChild);
 			}
 
 			if (status) {
 				var enabled = status.enabled === true || status.enabled === 'true';
 				var running = status.running === true || status.running === 'true';
 
-				container.appendChild(E('div', {}, [
+				statusContainer.appendChild(E('div', {}, [
 					E('span', {}, _('Enabled') + ': ' + (enabled ? _('Yes') : _('No'))),
 					E('span', { 'style': 'margin-left: 12px;' }, _('Running') + ': ' + (running ? _('Yes') : _('No')))
 				]));
 
-				if (running) {
-					enableButton.style.display = 'none';
-					disableButton.style.display = '';
-				} else {
-					enableButton.style.display = '';
-					disableButton.style.display = 'none';
+				// Update control buttons
+				while (controlContainer.firstChild) {
+					controlContainer.removeChild(controlContainer.firstChild);
 				}
-			} else {
-				container.appendChild(E('span', {}, _('Failed to load status')));
-			}
 
-			finalize();
-		}, this)).catch(function(err) {
-			while (container.firstChild) {
-				container.removeChild(container.firstChild);
+				var buttons = [];
+
+				// Running control: show Start if not running, show Stop if running
+				if (!running) {
+					buttons.push(
+						E('button', {
+							'class': 'cbi-button cbi-button-action',
+							'id': 'rc-start-button',
+							'click': ui.createHandlerFn(this, function() {
+								var self = this;
+								return callInitAction('qmodem_network', 'start')
+									.then(function() {
+										ui.addNotification(null, E('p', _('QModem Network started successfully')));
+										return self.updateRcStatus();
+									})
+									.catch(function(err) {
+										ui.addNotification(null, E('p', _('Failed to start QModem Network: ') + err.message), 'error');
+										return self.updateRcStatus();
+									});
+							})
+						}, _('Start'))
+					);
+				} else {
+					buttons.push(
+						E('button', {
+							'class': 'cbi-button cbi-button-reset',
+							'id': 'rc-stop-button',
+							'click': ui.createHandlerFn(this, function() {
+								var self = this;
+								return callInitAction('qmodem_network', 'stop')
+									.then(function() {
+										ui.addNotification(null, E('p', _('QModem Network stopped successfully')));
+										return self.updateRcStatus();
+									})
+									.catch(function(err) {
+										ui.addNotification(null, E('p', _('Failed to stop QModem Network: ') + err.message), 'error');
+										return self.updateRcStatus();
+									});
+							})
+						}, _('Stop'))
+					);
+				}
+
+				buttons.push(E('span', { 'style': 'margin: 0 8px;' }, ' | '));
+
+				// Enabled control: show Enable if not enabled, show Disable if enabled
+				if (!enabled) {
+					buttons.push(
+						E('button', {
+							'class': 'cbi-button cbi-button-apply',
+							'id': 'rc-enable-button',
+							'click': ui.createHandlerFn(this, function() {
+								var self = this;
+								return callInitAction('qmodem_network', 'enable')
+									.then(function() {
+										ui.addNotification(null, E('p', _('QModem Network enabled successfully')));
+										return self.updateRcStatus();
+									})
+									.catch(function(err) {
+										ui.addNotification(null, E('p', _('Failed to enable QModem Network: ') + err.message), 'error');
+										return self.updateRcStatus();
+									});
+							})
+						}, _('Enable'))
+					);
+				} else {
+					buttons.push(
+						E('button', {
+							'class': 'cbi-button cbi-button-negative',
+							'id': 'rc-disable-button',
+							'click': ui.createHandlerFn(this, function() {
+								var self = this;
+								return callInitAction('qmodem_network', 'disable')
+									.then(function() {
+										ui.addNotification(null, E('p', _('QModem Network disabled successfully')));
+										return self.updateRcStatus();
+									})
+									.catch(function(err) {
+										ui.addNotification(null, E('p', _('Failed to disable QModem Network: ') + err.message), 'error');
+										return self.updateRcStatus();
+									});
+							})
+						}, _('Disable'))
+					);
+				}
+
+				buttons.forEach(function(btn) {
+					controlContainer.appendChild(btn);
+				});
+			} else {
+				statusContainer.appendChild(E('span', {}, _('Failed to load status')));
 			}
-			container.appendChild(E('span', {}, _('Error: ') + err.message));
-			finalize();
-		});
+		}, this)).catch(L.bind(function(err) {
+			while (statusContainer.firstChild) {
+				statusContainer.removeChild(statusContainer.firstChild);
+			}
+			statusContainer.appendChild(E('span', {}, _('Error: ') + err.message));
+		}, this));
 	},
 
 	showDialLogDialog: function(section_id) {
