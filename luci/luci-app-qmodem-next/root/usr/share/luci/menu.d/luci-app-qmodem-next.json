@@ -59,5 +59,26 @@
 			"type": "view",
 			"path": "qmodem/settings"
 		}
+	},
+	"admin/modem/qmodem/sms": {
+		"title": "SMS Messages",
+		"order": 6,
+		"action": {
+			"type": "view",
+			"path": "qmodem/sms"
+		},
+		"depends": {
+			"acl": [ "luci-app-qmodem-next" ]
+		}
+	},
+	"admin/modem/qmodem/sms/conversation/*": {
+		"title": "SMS Conversation",
+		"action": {
+			"type": "view",
+			"path": "qmodem/sms_conversation"
+		},
+		"depends": {
+			"acl": [ "luci-app-qmodem-next" ]
+		}
 	}
 }

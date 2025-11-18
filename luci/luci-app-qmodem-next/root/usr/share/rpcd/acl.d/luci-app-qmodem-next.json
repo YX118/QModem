@@ -25,6 +25,12 @@
 					"network_info",
 					"sim_info"
 				],
+				"qmodem_sms": [
+					"list_sms",
+					"get_conversation",
+					"get_sent_history",
+					"delete_sms"
+				],
 				"rc" : [ "list" ,"init"],
 				"uci": [ "qmodem" ]
 			},
@@ -50,6 +56,12 @@
 					"set_neighborcell",
 					"set_network_prefer",
 					"set_sms_storage"
+				],
+				"qmodem_sms": [
+					"send_sms",
+					"delete_sms",
+					"mark_read",
+					"clear_sent_history"
 				],
 				"uci": [ "qmodem" ]
 			},
