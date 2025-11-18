@@ -44,12 +44,12 @@
 			"path": "qmodem/debug"
 		}
 	},
-	"admin/modem/qmodem/config_modem_advanced": {
+	"admin/modem/qmodem/config_advanced": {
 		"title": "Advanced Modem Config",
 		"order": 4,
 		"action": {
 			"type": "view",
-			"path": "qmodem/config_modem_advanced"
+			"path": "qmodem/config_advanced"
 		}
 	},
 	"admin/modem/qmodem/sms": {
