@@ -47,7 +47,7 @@ qmodem_voip_load_capability()
 					media_transfer_bytes=$(qmodem_voip_json "@.modems[$capability_index].audio.transfer_bytes") || return 1
 					media_transfer_interval=$(qmodem_voip_json "@.modems[$capability_index].audio.transfer_interval_ms") || return 1
 					[ "$media_interface:$media_rate:$media_frame_ms:$media_qdai:$media_qpcmv_cfg:$media_qpcmv:$media_qaudmod:$media_transfer_bytes:$media_transfer_interval:$media_gps" = \
-					  '01:8000:20:x,0,0,4,0,0,1,1:8000,20:1,0:2:1024:64:none' ] || {
+					  '01:8000:20:x,0,0,4,0,0,1,1:8000,20:1,0:2:1024:60:none' ] || {
 						qmodem_voip_fault 'serial PCM capability invalid'; return 1
 					}
 					case $media_uac in false|0) ;; *)

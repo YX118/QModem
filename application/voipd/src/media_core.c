@@ -258,7 +258,7 @@ int qmodem_voip_media_attach(struct qmodem_voip_media_engine *engine,
 			     uint64_t session_id)
 {
 	if (!engine || !engine->ready || !session_id || attachment == QMODEM_VOIP_MEDIA_ATTACH_NONE ||
-		attachment > QMODEM_VOIP_MEDIA_ATTACH_CELLULAR ||
+		attachment > QMODEM_VOIP_MEDIA_ATTACH_SOCKET ||
 		(engine->session_id && engine->session_id != session_id))
 		return -1;
 	engine->session_id = session_id;

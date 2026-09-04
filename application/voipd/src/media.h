@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <stdatomic.h>
 
+#include "modem_profile.h"
+
 struct _snd_pcm;
 
 #define QMODEM_VOIP_MEDIA_RATE 8000U
@@ -38,7 +40,8 @@ enum qmodem_voip_media_attachment {
 	QMODEM_VOIP_MEDIA_ATTACH_NONE,
 	QMODEM_VOIP_MEDIA_ATTACH_BROWSER,
 	QMODEM_VOIP_MEDIA_ATTACH_LAN_SIP,
-	QMODEM_VOIP_MEDIA_ATTACH_CELLULAR
+	QMODEM_VOIP_MEDIA_ATTACH_CELLULAR,
+	QMODEM_VOIP_MEDIA_ATTACH_SOCKET
 };
 
 struct qmodem_voip_media_frame {
@@ -115,6 +118,7 @@ struct qmodem_voip_rtp_endpoint {
 
 struct qmodem_voip_media_engine {
 	struct qmodem_voip_media_device device;
+	struct qmodem_voip_modem_profile profile;
 	struct qmodem_voip_media_queue modem_to_canonical;
 	struct qmodem_voip_media_queue canonical_to_modem;
 	struct qmodem_voip_rtp_endpoint rtp;

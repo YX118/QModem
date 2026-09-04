@@ -46,10 +46,13 @@ define Build/Compile
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=gnu11 -Wall -Wextra -Werror \
 		-I$(STAGING_DIR)/usr/include -I$(STAGING_DIR)/usr/lib/spandsp3/include \
 		-o $(PKG_BUILD_DIR)/qmodem_voip \
-		$(PKG_BUILD_DIR)/qmodem_voip.c $(PKG_BUILD_DIR)/call_state.c \
-		$(PKG_BUILD_DIR)/sip_gateway.c $(PKG_BUILD_DIR)/sip_activation.c \
+		$(PKG_BUILD_DIR)/main.c $(PKG_BUILD_DIR)/daemon_core.c \
+		$(PKG_BUILD_DIR)/media_manager.c $(PKG_BUILD_DIR)/call_state.c \
+		$(PKG_BUILD_DIR)/modem_profile.c $(PKG_BUILD_DIR)/sip_gateway.c \
+		$(PKG_BUILD_DIR)/sip_activation.c \
 		$(PKG_BUILD_DIR)/media_core.c $(PKG_BUILD_DIR)/media_alsa.c \
 		$(PKG_BUILD_DIR)/media_serial.c $(PKG_BUILD_DIR)/browser_media.c \
+		$(PKG_BUILD_DIR)/media_socket.c \
 		$(PKG_BUILD_DIR)/rtp_transport.c \
 		$(TARGET_LDFLAGS) \
 		-L$(STAGING_DIR)/usr/lib/spandsp3/lib \
@@ -62,9 +65,11 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/qmodem_voip $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/qmodem_voip_registrar $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/usr/lib/qmodem_voip $(1)/usr/share/qmodem $(1)/usr/sbin \
-		$(1)/etc/init.d $(1)/etc/config $(1)/etc/qmodem_voip $(1)/etc/uci-defaults
+		$(1)/usr/share/qmodem_voip $(1)/etc/init.d $(1)/etc/config \
+		$(1)/etc/qmodem_voip $(1)/etc/uci-defaults $(1)/etc/hotplug.d/usb
 	$(INSTALL_BIN) ./files/usr/lib/qmodem_voip/*.sh $(1)/usr/lib/qmodem_voip/
 	$(INSTALL_DATA) ./files/usr/share/qmodem/modem_supports.json $(1)/usr/share/qmodem/
+	$(INSTALL_DATA) ./files/usr/share/qmodem_voip/modem_profiles.json $(1)/usr/share/qmodem_voip/
 	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_modem_safety $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_registrar_wait $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/etc/init.d/qmodem_voip $(1)/etc/init.d/
@@ -72,6 +77,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) ./files/etc/qmodem_voip/firewall.include $(1)/etc/qmodem_voip/
 	$(INSTALL_BIN) ./files/etc/uci-defaults/90-qmodem-voip-firewall $(1)/etc/uci-defaults/
 	$(INSTALL_BIN) ./files/etc/uci-defaults/91-qmodem-voip-https $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) ./files/etc/hotplug.d/usb/21-qmodem-voip-audio $(1)/etc/hotplug.d/usb/
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
