@@ -427,3 +427,17 @@ void qmodem_voip_media_socket_stop(struct qmodem_voip_media_socket *socket)
 	socket->listener.fd = -1;
 	memset(socket->path, 0, sizeof(socket->path));
 }
+
+int qmodem_voip_media_socket_attached(
+	const struct qmodem_voip_media_socket *socket)
+{
+	int i;
+
+	if (!socket)
+		return 0;
+	for (i = 0; i < (int)QMODEM_VOIP_MEDIA_SOCKET_PEERS; i++) {
+		if (socket->peers[i].attached)
+			return 1;
+	}
+	return 0;
+}

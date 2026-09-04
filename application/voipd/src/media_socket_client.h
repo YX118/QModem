@@ -19,6 +19,7 @@ struct qmodem_voip_media_socket_client {
 	int fd;
 	int attached;
 	uint64_t call_revision;
+	char session_id[QMODEM_VOIP_MEDIA_SOCKET_SESSION_ID_MAX];
 	uint32_t outbound_sequence;
 	uint32_t dropped;
 };

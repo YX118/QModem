@@ -96,6 +96,14 @@ int qmodem_voip_media_socket_start(struct qmodem_voip_media_socket *socket,
 void qmodem_voip_media_socket_stop(struct qmodem_voip_media_socket *socket);
 int qmodem_voip_media_socket_service(struct qmodem_voip_media_socket *socket,
 				     uint64_t timestamp_ms);
+/*
+ * Returns 1 when at least one peer is attached to the media socket. The
+ * daemon uses this to keep draining canonical_to_modem playback even when
+ * neither the browser nor an in-daemon RTP owner is attached, since a socket
+ * consumer is the audio sink in that case.
+ */
+int qmodem_voip_media_socket_attached(
+	const struct qmodem_voip_media_socket *socket);
 int qmodem_voip_media_socket_session_issue(struct qmodem_voip_media_socket *socket,
 					   uint64_t call_revision, uint64_t now,
 					   char id[QMODEM_VOIP_MEDIA_SOCKET_SESSION_ID_MAX]);

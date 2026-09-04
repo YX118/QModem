@@ -48,6 +48,9 @@ void qmodem_voip_browser_timer(struct uloop_timeout *timeout)
 		(app->call.state == QMODEM_VOIP_OUTGOING_SETUP ||
 		 app->call.state == QMODEM_VOIP_EARLY_MEDIA ||
 		 app->call.state == QMODEM_VOIP_ACTIVE);
+	int socket_attached = app->media.ready &&
+		app->call.state == QMODEM_VOIP_ACTIVE &&
+		qmodem_voip_media_socket_attached(&app->media_sock);
 	(void)timeout;
 	if (app->media.ready && !app->media_sock.ready)
 		(void)qmodem_voip_media_socket_start(&app->media_sock, &app->media,
@@ -65,10 +68,10 @@ void qmodem_voip_browser_timer(struct uloop_timeout *timeout)
 		(void)qmodem_voip_media_socket_service(&app->media_sock, timestamp_ms);
 	if (rtp_attached)
 		(void)qmodem_voip_rtp_service(&app->rtp, timestamp_ms);
-	if (browser_attached || rtp_attached)
+	if (browser_attached || rtp_attached || socket_attached)
 		(void)qmodem_voip_media_playback(&app->media, timestamp_ms);
 	uloop_timeout_set(&app->browser_timer,
-		(browser_attached || rtp_attached) ? 1 : 20);
+		(browser_attached || rtp_attached || socket_attached) ? 1 : 20);
 }
 
 void qmodem_voip_media_status(struct blob_buf *buffer)

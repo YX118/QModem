@@ -43,6 +43,17 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/sip_activation.c $(TARGET_LDFLAGS) \
 		-L$(STAGING_DIR)/usr/lib/spandsp3/lib \
 		-lpjsip -lpjlib-util -lpj -lspandsp -lsoxr -lasound -lubus -lubox -lwebsockets
+	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) \
+		-DPJ_AUTOCONF=1 -DPJ_IS_BIG_ENDIAN=0 -DPJ_IS_LITTLE_ENDIAN=1 \
+		-I$(STAGING_DIR)/usr/include -I$(STAGING_DIR)/usr/lib/spandsp3/include \
+		-Wall -Wextra -Werror -std=gnu11 \
+		-o $(PKG_BUILD_DIR)/qmodem_voip_sip_consumer \
+		$(PKG_BUILD_DIR)/sip_consumer.c $(PKG_BUILD_DIR)/sip_gateway.c \
+		$(PKG_BUILD_DIR)/sip_activation.c $(PKG_BUILD_DIR)/media_socket_client.c \
+		$(TARGET_LDFLAGS) \
+		-L$(STAGING_DIR)/usr/lib/spandsp3/lib \
+		-lpjsip -lpjlib-util -lpj -lspandsp -lsoxr -lasound -lubus -lubox \
+		-lblobmsg_json -lm
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=gnu11 -Wall -Wextra -Werror \
 		-I$(STAGING_DIR)/usr/include -I$(STAGING_DIR)/usr/lib/spandsp3/include \
 		-o $(PKG_BUILD_DIR)/qmodem_voip \
@@ -64,6 +75,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/qmodem_voip $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/qmodem_voip_registrar $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/qmodem_voip_sip_consumer $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/usr/lib/qmodem_voip $(1)/usr/share/qmodem $(1)/usr/sbin \
 		$(1)/usr/share/qmodem_voip $(1)/etc/init.d $(1)/etc/config \
 		$(1)/etc/qmodem_voip $(1)/etc/uci-defaults $(1)/etc/hotplug.d/usb
@@ -71,6 +83,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DATA) ./files/usr/share/qmodem/modem_supports.json $(1)/usr/share/qmodem/
 	$(INSTALL_DATA) ./files/usr/share/qmodem_voip/modem_profiles.json $(1)/usr/share/qmodem_voip/
 	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_modem_safety $(1)/usr/sbin/
+	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_consumer_wait $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_registrar_wait $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/etc/init.d/qmodem_voip $(1)/etc/init.d/
 	$(INSTALL_CONF) ./files/etc/config/qmodem_voip $(1)/etc/config/

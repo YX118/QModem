@@ -32,10 +32,29 @@ qmodem_voip_interface_address()
 qmodem_voip_start_registrar()
 {
 	lan_address=$1
+	engine=$(uci -q get qmodem_voip.sip.engine)
+	engine=${engine:-consumer}
+	media_socket_path=$2
 	[ "$(uci -q get qmodem_voip.sip.enabled)" = 1 ] || return 0
 	[ -r /etc/qmodem_voip/sip.conf ] || return 0
+	case "$engine" in
+	consumer|registrar) ;;
+	*)
+		logger -t qmodem_voip "unsupported SIP engine: $engine"
+		return 1
+		;;
+	esac
 	procd_open_instance registrar
-	procd_set_param command /usr/sbin/qmodem_voip_registrar_wait --listen-address 0.0.0.0 --advertise-address "$lan_address"
+	case "$engine" in
+	consumer)
+		procd_set_param command /usr/sbin/qmodem_voip_consumer_wait \
+			--listen-address 0.0.0.0 --advertise-address "$lan_address" \
+			--media-socket-path "$media_socket_path"
+		;;
+	registrar)
+		procd_set_param command /usr/sbin/qmodem_voip_registrar_wait --listen-address 0.0.0.0 --advertise-address "$lan_address"
+		;;
+	esac
 	procd_set_param respawn 3600 5 5
 	procd_close_instance
 	ubus call service event '{"type":"firewall","data":{"reload":true}}' >/dev/null 2>&1 || :
@@ -62,12 +81,16 @@ start_service()
 	procd_set_param respawn 3600 5 5
 	procd_close_instance
 
-	qmodem_voip_start_registrar "$lan_address"
+	qmodem_voip_start_registrar "$lan_address" "$media_socket_path"
 }
 
 reload_service()
 {
-	lan_address=$(qmodem_voip_interface_address)
-	[ -n "$lan_address" ] || return 0
-	qmodem_voip_start_registrar "$lan_address"
+	stop
+	start
+}
+
+service_triggers()
+{
+	procd_add_reload_trigger qmodem_voip
 }
