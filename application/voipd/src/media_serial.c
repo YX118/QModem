@@ -189,6 +189,7 @@ int qmodem_voip_serial_start(struct qmodem_voip_media_engine *engine,
 			     const char *slot)
 {
 	char path[256];
+	const char *configured_path = getenv("QMODEM_VOIP_PCM_DEVICE");
 	struct termios settings;
 	int fd;
 
@@ -196,9 +197,17 @@ int qmodem_voip_serial_start(struct qmodem_voip_media_engine *engine,
 		return -1;
 	if (!engine->profile.frame_bytes)
 		qmodem_voip_profile_default(&engine->profile);
-	if (qmodem_voip_serial_discover(sysfs_root, device_root, slot,
-		path, sizeof(path)))
+	if (configured_path && configured_path[0]) {
+		if (strncmp(configured_path, "/dev/ttyUSB", 11) &&
+		    strncmp(configured_path, "/dev/ttyACM", 11))
+			return -1;
+		if (snprintf(path, sizeof(path), "%s", configured_path) < 0 ||
+		    strlen(configured_path) >= sizeof(path))
+			return -1;
+	} else if (qmodem_voip_serial_discover(sysfs_root, device_root, slot,
+		   path, sizeof(path))) {
 		return -1;
+	}
 	fd = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
 	if (fd < 0)
 		return -1;
@@ -261,16 +270,13 @@ void qmodem_voip_serial_set_attached(struct qmodem_voip_media_engine *engine,
 
 void qmodem_voip_serial_prepare_call(struct qmodem_voip_media_engine *engine)
 {
-	uint64_t reopen_count;
-
 	if (!engine || engine->backend != QMODEM_VOIP_MEDIA_BACKEND_SERIAL)
 		return;
-	if (engine->serial.active && engine->serial.thread_started) {
-		reopen_count = atomic_load(&engine->serial.reopen_count);
-		qmodem_voip_serial_close(engine);
-		atomic_store(&engine->serial.reopen_count, reopen_count);
-	}
-	qmodem_voip_serial_set_attached(engine, 1);
+	qmodem_voip_serial_reset_stream(engine);
+	/* Do not consume modem PCM while ATD/ATA is still in setup.  RM520
+	 * exposes a short, non-audio stream during that interval; accepting it
+	 * shifts the first real 20 ms frame and can poison the call lifetime. */
+	qmodem_voip_serial_set_attached(engine, 0);
 }
 
 int qmodem_voip_serial_reopen(struct qmodem_voip_media_engine *engine)
@@ -295,6 +301,14 @@ int qmodem_voip_serial_reopen(struct qmodem_voip_media_engine *engine)
 	atomic_store(&engine->serial.reopen_pending, 0);
 	atomic_store(&engine->serial.reopen_count, count + 1U);
 	return 0;
+}
+
+int qmodem_voip_serial_reopen_now(struct qmodem_voip_media_engine *engine)
+{
+	if (!engine || engine->backend != QMODEM_VOIP_MEDIA_BACKEND_SERIAL)
+		return -1;
+	atomic_store(&engine->serial.reopen_pending, 1);
+	return qmodem_voip_serial_reopen(engine);
 }
 
 void qmodem_voip_serial_reset_stream(struct qmodem_voip_media_engine *engine)

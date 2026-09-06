@@ -28,18 +28,18 @@ int qmodem_voip_media_socket_client_attach(
 	struct qmodem_voip_media_socket_client *client,
 	const char *path, uint64_t call_revision, const char *session_id)
 {
-	struct qmodem_voip_media_socket_header *header;
-	struct qmodem_voip_media_socket_attach *attach;
+	struct qmodem_voip_media_socket_header header;
+	struct qmodem_voip_media_socket_attach attach;
 	struct sockaddr_un address = { 0 };
 	struct pollfd poll_fd;
-	uint8_t outgoing[sizeof(*header) + sizeof(*attach)];
+	uint8_t outgoing[sizeof(header) + sizeof(attach)];
 	uint8_t incoming[sizeof(struct qmodem_voip_media_socket_message)];
 	int fd;
 	int n;
 
 	if (!client || !path || !path[0] || !session_id || !session_id[0] ||
 	    strlen(path) >= sizeof(address.sun_path) ||
-	    strlen(session_id) >= sizeof(attach->session_id))
+	    strlen(session_id) >= sizeof(attach.session_id))
 		return -1;
 	fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
 	if (fd < 0)
@@ -52,14 +52,16 @@ int qmodem_voip_media_socket_client_attach(
 		return -1;
 	}
 	memset(outgoing, 0, sizeof(outgoing));
-	header = (struct qmodem_voip_media_socket_header *)outgoing;
-	header->magic = QMODEM_VOIP_MEDIA_SOCKET_MAGIC;
-	header->version = QMODEM_VOIP_MEDIA_SOCKET_VERSION;
-	header->type = QMODEM_VOIP_MEDIA_SOCKET_ATTACH;
-	header->payload_length = (uint32_t)sizeof(*attach);
-	attach = (struct qmodem_voip_media_socket_attach *)(outgoing + sizeof(*header));
-	attach->call_revision = call_revision;
-	memcpy(attach->session_id, session_id, strlen(session_id) + 1U);
+	memset(&header, 0, sizeof(header));
+	memset(&attach, 0, sizeof(attach));
+	header.magic = QMODEM_VOIP_MEDIA_SOCKET_MAGIC;
+	header.version = QMODEM_VOIP_MEDIA_SOCKET_VERSION;
+	header.type = QMODEM_VOIP_MEDIA_SOCKET_ATTACH;
+	header.payload_length = (uint32_t)sizeof(attach);
+	attach.call_revision = call_revision;
+	memcpy(attach.session_id, session_id, strlen(session_id) + 1U);
+	memcpy(outgoing, &header, sizeof(header));
+	memcpy(outgoing + sizeof(header), &attach, sizeof(attach));
 	if (send(fd, outgoing, sizeof(outgoing), 0) != (ssize_t)sizeof(outgoing)) {
 		(void)close(fd);
 		return -1;
@@ -75,15 +77,18 @@ int qmodem_voip_media_socket_client_attach(
 	n = recv(fd, incoming, sizeof(incoming), 0);
 	if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
 		n = -1;
-	header = (struct qmodem_voip_media_socket_header *)incoming;
-	if (n < (ssize_t)sizeof(*header) ||
-	    header->magic != QMODEM_VOIP_MEDIA_SOCKET_MAGIC ||
-	    header->version != QMODEM_VOIP_MEDIA_SOCKET_VERSION ||
-	    header->payload_length != (uint32_t)(n - (int)sizeof(*header))) {
+	if (n < (ssize_t)sizeof(header)) {
 		(void)close(fd);
 		return -1;
 	}
-	if (header->type != QMODEM_VOIP_MEDIA_SOCKET_STATE_CHANGE) {
+	memcpy(&header, incoming, sizeof(header));
+	if (header.magic != QMODEM_VOIP_MEDIA_SOCKET_MAGIC ||
+	    header.version != QMODEM_VOIP_MEDIA_SOCKET_VERSION ||
+	    header.payload_length != (uint32_t)(n - (int)sizeof(header))) {
+		(void)close(fd);
+		return -1;
+	}
+	if (header.type != QMODEM_VOIP_MEDIA_SOCKET_STATE_CHANGE) {
 		(void)close(fd);
 		return -1;
 	}
@@ -100,7 +105,7 @@ int qmodem_voip_media_socket_client_read(
 	struct qmodem_voip_media_socket_client *client,
 	struct qmodem_voip_media_socket_message *message)
 {
-	struct qmodem_voip_media_socket_header *header;
+	struct qmodem_voip_media_socket_header header;
 	int received;
 
 	if (!client || client->fd < 0 || !message)
@@ -113,10 +118,10 @@ int qmodem_voip_media_socket_client_read(
 	}
 	if (received == 0)
 		return -1;
-	header = &message->header;
-	if (header->magic != QMODEM_VOIP_MEDIA_SOCKET_MAGIC ||
-	    header->version != QMODEM_VOIP_MEDIA_SOCKET_VERSION ||
-	    header->payload_length != (uint32_t)(received - (int)sizeof(*header)))
+	memcpy(&header, message, sizeof(header));
+	if (header.magic != QMODEM_VOIP_MEDIA_SOCKET_MAGIC ||
+	    header.version != QMODEM_VOIP_MEDIA_SOCKET_VERSION ||
+	    header.payload_length != (uint32_t)(received - (int)sizeof(header)))
 		return -1;
 	return 1;
 }

@@ -54,6 +54,25 @@ void qmodem_voip_call_init(struct qmodem_voip_call *call)
 	call->endpoint = QMODEM_VOIP_ENDPOINT_NONE;
 }
 
+int qmodem_voip_call_select_at_port(struct qmodem_voip_call *call,
+				    const char *port)
+{
+	size_t length;
+	if (!call || !port)
+		return -1;
+	length = strlen(port);
+	if (!length || length >= sizeof(call->at_port))
+		return -1;
+	if (strcmp(call->at_port, port) == 0)
+		return 0;
+	memcpy(call->at_port, port, length + 1U);
+	call->restart_epoch = 0;
+	call->sequence = 0;
+	call->drop_count = 0;
+	call->reconcile_command_id = 0;
+	return 1;
+}
+
 void qmodem_voip_call_set_enabled(struct qmodem_voip_call *call, int enabled)
 {
 	call->enabled = enabled != 0;
@@ -297,7 +316,8 @@ static void clear_call(struct qmodem_voip_call *call)
 	qmodem_voip_call_touch(call);
 }
 
-int qmodem_voip_line(struct qmodem_voip_call *call, uint64_t epoch,
+int qmodem_voip_line(struct qmodem_voip_call *call, const char *port,
+			    uint64_t epoch,
 			    uint64_t sequence, const char *raw,
 			    enum qmodem_voip_correlation correlation,
 			    uint64_t command_id, uint64_t drop_count,
@@ -309,8 +329,10 @@ int qmodem_voip_line(struct qmodem_voip_call *call, uint64_t epoch,
 	int empty_number;
 	int correlated_reconcile = 0;
 	int gap;
-	if (!call->enabled || !raw)
+	if (!call->enabled || !raw || !port)
 		return -1;
+	if (!call->at_port[0] || strcmp(call->at_port, port) != 0)
+		return 1;
 	if (call->restart_epoch != 0 && epoch < call->restart_epoch)
 		return 1;
 	if (call->restart_epoch != 0 && epoch == call->restart_epoch &&
@@ -359,6 +381,7 @@ int qmodem_voip_line(struct qmodem_voip_call *call, uint64_t epoch,
 		return 0;
 	}
 	if (has_prefix(raw, "+CLCC:")) {
+		enum qmodem_voip_state previous_state = call->state;
 		if (!clcc_status(raw, &status, &mode, &empty_number))
 			return 0;
 		if (mode == 1) {
@@ -400,7 +423,12 @@ int qmodem_voip_line(struct qmodem_voip_call *call, uint64_t epoch,
 		case 4: case 5: call->state = QMODEM_VOIP_INCOMING_RINGING; break;
 		default: break;
 		}
-		notify(event, call, "call_state", opaque);
+		/* The revision identifies a call lifecycle for media ownership.  A
+		 * periodic CLCC poll reports the same state repeatedly; touching the
+		 * revision for those reports invalidates browser and SIP media tokens
+		 * between issuance and their handshake. */
+		if (call->state != previous_state)
+			notify(event, call, "call_state", opaque);
 		return 0;
 	}
 	if (has_prefix(raw, "RING")) {

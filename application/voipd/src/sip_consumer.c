@@ -51,8 +51,11 @@
 #define MAX_SIP_MESSAGE 4096
 #define MAX_SIP_BODY 2048
 #define RATE_SLOTS 32
-#define UBUS_ACTION_TIMEOUT_MS 5000
+#define UBUS_ACTION_TIMEOUT_MS 30000
 #define PIDFILE "/var/run/qmodem_voip_sip_consumer.pid"
+#define MEDIA_ATTACH_RETRY_MS 250
+#define MEDIA_ATTACH_RETRY_MAX 20
+#define EVENT_LOOP_SLICE_MS 10
 
 #define RTP_HEADER_SIZE 12U
 #define RTP_PACKET_SIZE (RTP_HEADER_SIZE + QMODEM_VOIP_MEDIA_SAMPLES)
@@ -84,6 +87,8 @@ struct consumer {
 	int rtp_fd;
 	struct uloop_fd rtp_fd_event;
 	int rtp_attached;
+	struct uloop_timeout media_attach_timeout;
+	unsigned media_attach_attempts;
 	struct sockaddr_in rtp_peer;
 	enum qmodem_voip_media_codec rtp_codec;
 	uint16_t rtp_sequence;
@@ -127,6 +132,7 @@ static int g711_bridge_decode(enum qmodem_voip_media_codec codec,
 
 static struct consumer app;
 static volatile sig_atomic_t running = 1;
+static void stop_media(void);
 
 static void stop_handler(int signo)
 {
@@ -473,6 +479,7 @@ static int set_lan_answer(pjsip_rx_data *request, pjsip_tx_data *response,
 	pj_str_t text;
 	pjsip_to_hdr *to;
 	pjsip_contact_hdr *contact;
+	pjsip_uri *parsed_contact;
 	char address[INET_ADDRSTRLEN];
 	char body[512];
 	char contact_value[64];
@@ -506,12 +513,23 @@ static int set_lan_answer(pjsip_rx_data *request, pjsip_tx_data *response,
 	to = (pjsip_to_hdr *)pjsip_msg_find_hdr(response->msg, PJSIP_H_TO, NULL);
 	if (!to)
 		return -1;
-	pj_create_unique_string(response->pool, &to->tag);
+	/* The initial INVITE has no local tag, while an in-dialog re-INVITE
+	 * already carries the tag we selected for the dialog.  Replacing that
+	 * tag would make the response belong to a new dialog and causes clients
+	 * such as Linphone to tear the call down after their session refresh. */
+	if (to->tag.slen == 0)
+		pj_create_unique_string(response->pool, &to->tag);
 	length = snprintf(contact_value, sizeof(contact_value), "sip:qmodem_voip@%s:5060", address);
 	if (length < 0 || length >= (int)sizeof(contact_value))
 		return -1;
 	contact = pjsip_contact_hdr_create(response->pool);
-	contact->uri = pjsip_parse_uri(response->pool, contact_value, length, 0);
+	/* pjsip_parse_uri() may retain pointers into its input buffer.  The
+	 * formatted value above is stack storage, so clone the parsed URI into the
+	 * response pool before returning from this function. */
+	parsed_contact = pjsip_parse_uri(response->pool, contact_value, length, 0);
+	if (!parsed_contact)
+		return -1;
+	contact->uri = (pjsip_uri *)pjsip_uri_clone(response->pool, parsed_contact);
 	if (!contact->uri)
 		return -1;
 	pjsip_msg_add_hdr(response->msg, (pjsip_hdr *)contact);
@@ -540,10 +558,22 @@ static void invite_call(pjsip_rx_data *request)
 		send_response(request, PJSIP_SC_NOT_ACCEPTABLE_HERE, PJ_FALSE, PJ_FALSE);
 		return;
 	}
-	if (!binding_active() || app.call.active ||
-	    ubus_action("status", NULL) != 0) {
+	if (!binding_active()) {
 		send_response(request, PJSIP_SC_BUSY_HERE, PJ_FALSE, PJ_FALSE);
 		return;
+	}
+	/* The daemon's originate method is the authoritative arbitration point.
+	 * A status RPC can race a release event or fail to parse a freshly-added
+	 * status field; treating that observation as Busy Here strands all later
+	 * calls even though the daemon is idle. */
+	/* A previous consumer instance can miss the daemon's release event while
+	 * the modem itself has already returned to idle.  Do not let that stale
+	 * local record make every subsequent INVITE look busy. */
+	if (app.call.active) {
+		syslog(LOG_WARNING,
+			"qmodem_voip sip: clearing stale local call before new INVITE");
+		stop_media();
+		qmodem_voip_sip_call_release(&app.call);
 	}
 	if (sip_number(request, number) != 0 ||
 	    request_identity(request, call_id, sizeof(call_id), remote_tag,
@@ -580,6 +610,61 @@ static void invite_call(pjsip_rx_data *request)
 	app.pending_lan_response = response;
 	send_response(request, PJSIP_SC_TRYING, PJ_FALSE, PJ_FALSE);
 	send_response(request, PJSIP_SC_RINGING, PJ_FALSE, PJ_FALSE);
+}
+
+/* Handle a session-refresh/re-negotiation INVITE (or UPDATE) inside the
+ * established LAN dialog.  Treating every INVITE as a new cellular originate
+ * makes Linphone's refresh receive 486 Busy Here; the peer then ends an
+ * otherwise healthy call roughly 30-40 seconds after it was answered. */
+static int in_dialog_media_refresh(pjsip_rx_data *request)
+{
+	char call_id[QMODEM_VOIP_SIP_CALL_ID_SIZE];
+	char remote_tag[QMODEM_VOIP_SIP_TAG_SIZE];
+	char branch[QMODEM_VOIP_SIP_BRANCH_SIZE];
+	struct qmodem_voip_sip_media media;
+	unsigned cseq;
+	pjsip_tx_data *response = NULL;
+
+	if (!app.call.active || !app.call.established ||
+	    app.call.origin != QMODEM_VOIP_SIP_CALL_LAN ||
+	    request_identity(request, call_id, sizeof(call_id), remote_tag,
+		    sizeof(remote_tag), branch, sizeof(branch), &cseq) != 0 ||
+	    strcmp(call_id, app.call.call_id) != 0 ||
+	    strcmp(remote_tag, app.call.remote_tag) != 0)
+		return -1;
+	(void)branch;
+	(void)cseq;
+	if (!authenticate(request))
+		return 0;
+	if (supported_sdp(request, &media) != 0) {
+		send_response(request, PJSIP_SC_NOT_ACCEPTABLE_HERE, PJ_FALSE, PJ_FALSE);
+		return 0;
+	}
+	if (pjsip_endpt_create_response(app.endpoint, request, PJSIP_SC_OK, NULL,
+				       &response) != PJ_SUCCESS ||
+	    set_lan_answer(request, response, media.payload_type) != 0) {
+		if (response)
+			pjsip_tx_data_dec_ref(response);
+		send_response(request, PJSIP_SC_SERVICE_UNAVAILABLE, PJ_FALSE, PJ_FALSE);
+		return 0;
+	}
+	app.media = media;
+	if (app.media_attached) {
+		app.rtp_codec = (enum qmodem_voip_media_codec)media.payload_type;
+		app.rtp_peer.sin_port = htons((uint16_t)media.port);
+		if (inet_pton(AF_INET, media.address, &app.rtp_peer.sin_addr) != 1) {
+			pjsip_tx_data_dec_ref(response);
+			send_response(request, PJSIP_SC_NOT_ACCEPTABLE_HERE, PJ_FALSE, PJ_FALSE);
+			return 0;
+		}
+	}
+	if (pjsip_endpt_send_response2(app.endpoint, request, response, NULL, NULL) !=
+	    PJ_SUCCESS)
+		pjsip_tx_data_dec_ref(response);
+	else
+		syslog(LOG_INFO, "qmodem_voip sip: accepted in-dialog INVITE refresh cseq %u",
+		       cseq);
+	return 0;
 }
 
 static int set_incoming_offer(pjsip_tx_data *request)
@@ -670,7 +755,7 @@ static pj_bool_t on_response(pjsip_rx_data *response)
 	return PJ_FALSE;
 }
 
-static void stop_media(void);
+static void release_pending_lan_response(void);
 static int attach_media(void);
 
 static int invoke_action(void *opaque)
@@ -685,19 +770,42 @@ static void end_call(pjsip_rx_data *request, int cancel)
 	char branch[QMODEM_VOIP_SIP_BRANCH_SIZE];
 	unsigned cseq;
 	int status;
-	if (!authenticate(request))
+	/* CANCEL belongs to the original INVITE transaction and commonly has no
+	 * Authorization header (Linphone follows that SIP behavior).  Challenging
+	 * it with 401 leaves the cellular leg active and the caller stuck waiting;
+	 * identity and Via-branch matching below still prevent unrelated calls from
+	 * being cancelled.  BYE remains Digest-authenticated. */
+	if (!cancel && !authenticate(request))
 		return;
 	if (request_identity(request, call_id, sizeof(call_id), remote_tag,
 		    sizeof(remote_tag), branch, sizeof(branch), &cseq) != 0) {
 		send_response(request, PJSIP_SC_BAD_REQUEST, PJ_FALSE, PJ_FALSE);
 		return;
 	}
+	syslog(LOG_INFO,
+		"qmodem_voip sip: received %s call-id=%s tag=%s branch=%s cseq=%u stored-active=%u stored-origin=%u stored-tag=%s stored-branch=%s stored-cseq=%u established=%u",
+		cancel ? "CANCEL" : "BYE", call_id, remote_tag, branch, cseq,
+		app.call.active, app.call.origin, app.call.remote_tag,
+		app.call.branch, app.call.cseq, app.call.established);
 	status = cancel ? qmodem_voip_sip_call_cancel(&app.call, 1, call_id,
 		remote_tag, branch, cseq, invoke_action, "hangup") :
 			qmodem_voip_sip_call_bye(&app.call, 1, call_id, remote_tag,
 				invoke_action, "hangup");
-	if (status == PJSIP_SC_OK)
+	syslog(LOG_INFO, "qmodem_voip sip: %s result=%d", cancel ? "CANCEL" : "BYE",
+		status);
+	if (status == PJSIP_SC_OK) {
+		/* A CANCEL/BYE can race the delayed final response while the modem is
+		 * still transitioning to active.  Drop that response and its retry
+		 * timer when the dialog is torn down; otherwise the next call inherits
+		 * a stale transaction and can remain in the waiting state. */
+		uloop_timeout_cancel(&app.media_attach_timeout);
+		if (app.pending_lan_response) {
+			pjsip_tx_data_dec_ref(app.pending_lan_response);
+			app.pending_lan_response = NULL;
+			release_pending_lan_response();
+		}
 		(void)stop_media();
+	}
 	send_response(request, status, PJ_FALSE, PJ_FALSE);
 }
 
@@ -712,8 +820,14 @@ static pj_bool_t on_request(pjsip_rx_data *request)
 		register_contact(request);
 		return PJ_TRUE;
 	}
-	if (method->id == PJSIP_INVITE_METHOD) {
-		invite_call(request);
+	if (method->id == PJSIP_INVITE_METHOD ||
+	    (method->id == PJSIP_OTHER_METHOD && str_equal(&method->name, "UPDATE"))) {
+		if (in_dialog_media_refresh(request) == 0)
+			return PJ_TRUE;
+		if (method->id == PJSIP_INVITE_METHOD)
+			invite_call(request);
+		else
+			send_response(request, PJSIP_SC_METHOD_NOT_ALLOWED, PJ_FALSE, PJ_FALSE);
 		return PJ_TRUE;
 	}
 	if (method->id == PJSIP_ACK_METHOD) {
@@ -747,6 +861,8 @@ static void stop_media(void)
 	}
 	qmodem_voip_media_socket_client_detach(&app.media_sock);
 	if (app.rtp_fd >= 0) {
+		uloop_fd_delete(&app.rtp_fd_event);
+		app.rtp_fd_event.fd = -1;
 		(void)close(app.rtp_fd);
 		app.rtp_fd = -1;
 	}
@@ -942,13 +1058,31 @@ static int attach_media(void)
 {
 	if (app.media_attached)
 		return 0;
-	if (ubus_fetch_status() != 0)
+	app.rtp_codec = (enum qmodem_voip_media_codec)app.media.payload_type;
+	memset(&app.rtp_peer, 0, sizeof(app.rtp_peer));
+	app.rtp_peer.sin_family = AF_INET;
+	app.rtp_peer.sin_port = htons((uint16_t)app.media.port);
+	if (inet_pton(AF_INET, app.media.address,
+		&app.rtp_peer.sin_addr) != 1)
 		return -1;
-	if (ubus_issue_socket_session() != 0 ||
-	    qmodem_voip_media_socket_client_attach(&app.media_sock,
+	if (ubus_fetch_status() != 0) {
+		syslog(LOG_WARNING, "qmodem_voip sip: media attach status unavailable");
+		return -1;
+	}
+	if (ubus_issue_socket_session() != 0) {
+		syslog(LOG_WARNING,
+			"qmodem_voip sip: media session rejected at revision %llu",
+			(unsigned long long)app.media_revision);
+		return -1;
+	}
+	if (qmodem_voip_media_socket_client_attach(&app.media_sock,
 		app.media_socket_path, app.media_revision,
-		app.media_sock.session_id) != 0)
+		app.media_sock.session_id) != 0) {
+		syslog(LOG_WARNING,
+			"qmodem_voip sip: media socket handshake rejected at revision %llu",
+			(unsigned long long)app.media_revision);
 		return -1;
+	}
 	app.media_fd_event.fd = app.media_sock.fd;
 	app.media_fd_event.cb = media_readable;
 	app.rtp_fd_event.fd = app.rtp_fd;
@@ -958,6 +1092,67 @@ static int attach_media(void)
 	app.media_attached = 1;
 	app.rtp_attached = 1;
 	return 0;
+}
+
+static void release_pending_lan_response(void)
+{
+	if (app.pending_lan_response_addr.transport)
+		pjsip_transport_dec_ref(app.pending_lan_response_addr.transport);
+	memset(&app.pending_lan_response_addr, 0,
+		sizeof(app.pending_lan_response_addr));
+}
+
+static void media_attach_retry(struct uloop_timeout *timeout)
+{
+	pjsip_tx_data *response;
+	pj_status_t send_status;
+	(void)timeout;
+	if (!app.call.active || !app.pending_lan_response)
+		return;
+	app.media_attach_attempts++;
+	if (rtp_open() != 0 || attach_media() != 0) {
+		if (app.media_attach_attempts < MEDIA_ATTACH_RETRY_MAX) {
+			uloop_timeout_set(&app.media_attach_timeout,
+				MEDIA_ATTACH_RETRY_MS);
+			return;
+		}
+		syslog(LOG_WARNING,
+			"qmodem_voip sip: media attach failed after %u attempts",
+			app.media_attach_attempts);
+		app.pending_lan_response->msg->line.status.code =
+			PJSIP_SC_TEMPORARILY_UNAVAILABLE;
+		app.pending_lan_response->msg->line.status.reason =
+			*pjsip_get_status_text(PJSIP_SC_TEMPORARILY_UNAVAILABLE);
+		response = app.pending_lan_response;
+		app.pending_lan_response = NULL;
+		if (pjsip_endpt_send_response(app.endpoint,
+			&app.pending_lan_response_addr, response, NULL, NULL) != PJ_SUCCESS)
+			pjsip_tx_data_dec_ref(response);
+		release_pending_lan_response();
+		stop_media();
+		qmodem_voip_sip_call_clear(&app.call);
+		return;
+	}
+
+	response = app.pending_lan_response;
+	app.pending_lan_response = NULL;
+	send_status = pjsip_endpt_send_response(app.endpoint,
+		&app.pending_lan_response_addr, response, NULL, NULL);
+	if (send_status != PJ_SUCCESS) {
+		syslog(LOG_WARNING, "qmodem_voip sip: active response failed");
+		pjsip_tx_data_dec_ref(response);
+		stop_media();
+	} else {
+		char remote_tag[QMODEM_VOIP_SIP_TAG_SIZE];
+		if (app.call.remote_tag[0]) {
+			memcpy(remote_tag, app.call.remote_tag, sizeof(remote_tag));
+			(void)qmodem_voip_sip_call_establish(&app.call, remote_tag);
+		}
+		syslog(LOG_INFO,
+			"qmodem_voip sip: active response sent after %u attach attempt(s)",
+			app.media_attach_attempts);
+	}
+	release_pending_lan_response();
 }
 
 static void consumer_event(struct ubus_context *context,
@@ -986,35 +1181,12 @@ static void consumer_event(struct ubus_context *context,
 	if (strcmp(blobmsg_get_string(values[0]), "call_state") == 0 &&
 	    strcmp(blobmsg_get_string(values[1]), "active") == 0 &&
 	    app.call.active) {
-		if (app.media_revision && rtp_open() == 0)
-			(void)attach_media();
-		if (app.media_attached && app.pending_lan_response) {
-			pjsip_tx_data *response = app.pending_lan_response;
-			pj_status_t send_status;
-			app.pending_lan_response = NULL;
-			send_status = pjsip_endpt_send_response(app.endpoint,
-				&app.pending_lan_response_addr, response, NULL, NULL);
-			if (send_status != PJ_SUCCESS) {
-				syslog(LOG_WARNING,
-					"qmodem_voip sip: active response failed");
-				pjsip_tx_data_dec_ref(response);
-				stop_media();
-			} else {
-				char remote_tag[QMODEM_VOIP_SIP_TAG_SIZE];
-				if (app.call.remote_tag[0]) {
-					memcpy(remote_tag, app.call.remote_tag,
-						sizeof(remote_tag));
-					(void)qmodem_voip_sip_call_establish(&app.call,
-						remote_tag);
-				}
-				syslog(LOG_INFO, "qmodem_voip sip: active response sent");
-			}
-			if (app.pending_lan_response_addr.transport)
-				pjsip_transport_dec_ref(app.pending_lan_response_addr.transport);
-			memset(&app.pending_lan_response_addr, 0,
-				sizeof(app.pending_lan_response_addr));
+		if (app.pending_lan_response && !app.media_attach_timeout.pending) {
+			app.media_attach_attempts = 0;
+			uloop_timeout_set(&app.media_attach_timeout, 0);
 		}
 	} else if (strcmp(blobmsg_get_string(values[0]), "release") == 0) {
+		uloop_timeout_cancel(&app.media_attach_timeout);
 		if (app.pending_lan_response) {
 			app.pending_lan_response->msg->line.status.code = PJSIP_SC_TEMPORARILY_UNAVAILABLE;
 			app.pending_lan_response->msg->line.status.reason =
@@ -1023,11 +1195,8 @@ static void consumer_event(struct ubus_context *context,
 				    &app.pending_lan_response_addr,
 				    app.pending_lan_response, NULL, NULL) != PJ_SUCCESS)
 				pjsip_tx_data_dec_ref(app.pending_lan_response);
-			if (app.pending_lan_response_addr.transport)
-				pjsip_transport_dec_ref(app.pending_lan_response_addr.transport);
 			app.pending_lan_response = NULL;
-			memset(&app.pending_lan_response_addr, 0,
-				sizeof(app.pending_lan_response_addr));
+			release_pending_lan_response();
 		}
 		stop_media();
 		qmodem_voip_sip_call_release(&app.call);
@@ -1074,7 +1243,7 @@ int main(int argc, char **argv)
 {
 	pj_sockaddr_in address;
 	pj_status_t rc;
-	pj_time_val delay = {0, 100};
+	pj_time_val delay = {0, 0};
 	if (argc != 7 || strcmp(argv[1], "--listen-address") != 0 ||
 	    strcmp(argv[3], "--advertise-address") != 0 ||
 	    strcmp(argv[5], "--media-socket-path") != 0 ||
@@ -1092,6 +1261,7 @@ int main(int argc, char **argv)
 	app.media_fd_event.fd = -1;
 	app.rtp_fd_event.fd = -1;
 	app.rtp_fd = -1;
+	app.media_attach_timeout.cb = media_attach_retry;
 	app.media_revision = (uint64_t)time(NULL);
 	if (load_credentials() != 0)
 		return 2;
@@ -1161,15 +1331,17 @@ int main(int argc, char **argv)
 	while (running) {
 		if (app.reload_requested) {
 			app.reload_requested = 0;
+			uloop_timeout_cancel(&app.media_attach_timeout);
 			(void)load_credentials();
 			app.binding[0] = '\0';
 			app.expires = 0;
 			qmodem_voip_sip_call_release(&app.call);
 		}
-		(void)uloop_run_timeout(0);
+		(void)uloop_run_timeout(EVENT_LOOP_SLICE_MS);
 		(void)pjsip_endpt_handle_events(app.endpoint, &delay);
 	}
 	(void)unlink(PIDFILE);
+	uloop_timeout_cancel(&app.media_attach_timeout);
 	stop_media();
 	uloop_done();
 	ubus_free(app.ubus);

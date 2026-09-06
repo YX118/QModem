@@ -8,6 +8,7 @@ for handle in $handles; do
 	nft delete rule inet fw4 input handle "$handle" || exit 1
 done
 
+[ "$(uci -q get qmodem_voip.main.enabled)" = 1 ] || exit 0
 [ "$(uci -q get qmodem_voip.sip.enabled)" = 1 ] || exit 0
 [ -r "$config" ] || exit 0
 

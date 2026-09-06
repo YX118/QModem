@@ -429,8 +429,19 @@ static int end_call(struct qmodem_voip_sip_call *call, int authenticated,
 	if (!call || !call->active || !call_id || !remote_tag ||
 	    strcmp(call->call_id, call_id) != 0 ||
 	    strcmp(call->remote_tag, remote_tag) != 0 ||
-	    (cancel && (call->established || call->origin != QMODEM_VOIP_SIP_CALL_LAN ||
-		call->cseq != cseq)) || (!cancel && !call->established))
+	    /* A LAN caller can send CANCEL while it is still waiting for the
+	     * delayed 200 OK.  The consumer marks the call established when that
+	     * response is handed to PJSIP, so rejecting CANCEL solely because the
+	     * local state is established leaves the cellular call stuck when the
+	     * response was lost or not accepted by the client. */
+	    (cancel && (call->origin != QMODEM_VOIP_SIP_CALL_LAN ||
+		call->cseq != cseq)) ||
+	    /* Linphone may send BYE when it has locally abandoned an INVITE
+	     * whose delayed 200 OK was not accepted.  It is still a valid
+	     * teardown request for the matched LAN call; requiring established
+	     * here strands the cellular leg until the modem-side timeout. */
+	    (!cancel && !call->established &&
+		call->origin != QMODEM_VOIP_SIP_CALL_LAN))
 		return 481;
 	if (!action || action(opaque) != 0)
 		return 503;

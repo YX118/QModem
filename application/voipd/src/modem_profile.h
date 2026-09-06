@@ -16,6 +16,11 @@ struct qmodem_voip_modem_profile {
 	char qaudmod[16];
 	char qpcmv[32];
 	char qpcmv_cfg[32];
+	unsigned adb_unlock;
+	unsigned voice_server_media_gate;
+	unsigned voice_server_restart;
+	char voice_server_dependency_service[96];
+	char voice_server_service[96];
 	unsigned frame_samples;
 	unsigned frame_bytes;
 };

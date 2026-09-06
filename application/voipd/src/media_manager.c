@@ -22,7 +22,10 @@ static void clear_secret(void *value, size_t length)
 void qmodem_voip_media_sync(void)
 {
 	struct qmodem_voip_context *app = &qmodem_voip_ctxt;
-	int should_run = app->call.state == QMODEM_VOIP_ACTIVE && app->media.ready &&
+	int call_media_state = app->call.state == QMODEM_VOIP_OUTGOING_SETUP ||
+		app->call.state == QMODEM_VOIP_EARLY_MEDIA ||
+		app->call.state == QMODEM_VOIP_ACTIVE;
+	int should_run = call_media_state && app->media.ready &&
 		(app->call.origin == QMODEM_VOIP_ENDPOINT_BROWSER ||
 		 app->call.answer_owner == QMODEM_VOIP_ENDPOINT_BROWSER) &&
 		app->browser.engine == &app->media;
@@ -32,7 +35,10 @@ void qmodem_voip_media_sync(void)
 		return;
 	}
 	if (app->browser.ready && app->browser.call_revision != app->call.revision)
-		qmodem_voip_browser_media_stop(&app->browser);
+		/* Keep the same authenticated context while this call advances through
+		 * setup, early media, and active.  Pending tokens remain valid for this
+		 * context; the context is still cleared when the call leaves these states. */
+		app->browser.call_revision = app->call.revision;
 	if (!app->browser.ready)
 		(void)qmodem_voip_browser_media_start(&app->browser, app->call.revision);
 }
@@ -83,6 +89,10 @@ void qmodem_voip_media_status(struct blob_buf *buffer)
 		backend = "serial_pcm";
 	else if (app->media.backend == QMODEM_VOIP_MEDIA_BACKEND_UAC)
 		backend = "uac";
+	/* `media` is the stable capability consumed by LuCI.  Keep it tied to
+	 * the modem media engine, while `browser_media` continues to describe
+	 * the optional, call-scoped WebSocket attachment. */
+	blobmsg_add_string(buffer, "media", app->media.ready ? "ready" : "not_ready");
 	blobmsg_add_string(buffer, "media_engine", app->media.ready ? "ready" : "not_ready");
 	blobmsg_add_string(buffer, "media_backend", backend);
 	blobmsg_add_string(buffer, "browser_media", app->browser.ready ? "ready" : "not_ready");
@@ -143,7 +153,12 @@ int qmodem_voip_media_token_method(struct ubus_context *ubus,
 	    !parameters[QMODEM_VOIP_MEDIA_HTTPS_ORIGIN])
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_INVALID_ARGUMENT,
 			"invalid_session", "session, revision, and origin are required");
-	if (app->call.state != QMODEM_VOIP_ACTIVE || !app->media.ready || !app->browser.ready)
+	if ((app->call.state != QMODEM_VOIP_OUTGOING_SETUP &&
+	     app->call.state != QMODEM_VOIP_EARLY_MEDIA &&
+	     app->call.state != QMODEM_VOIP_ACTIVE) ||
+	    (app->call.origin != QMODEM_VOIP_ENDPOINT_BROWSER &&
+	     app->call.answer_owner != QMODEM_VOIP_ENDPOINT_BROWSER) ||
+	    !app->media.ready || !app->browser.ready)
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
 			"unsupported", "not_ready");
 	session_id = blobmsg_get_string(parameters[QMODEM_VOIP_MEDIA_SESSION_ID]);
@@ -155,7 +170,10 @@ int qmodem_voip_media_token_method(struct ubus_context *ubus,
 	else
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_INVALID_ARGUMENT,
 			"invalid_session", "call revision must be an integer");
-	if (revision != app->call.revision || !qmodem_voip_session_is_authorized(session_id) ||
+	/* Call notifications advance the revision during setup/answer.  A token
+	 * request carrying the immediately previous revision is still for this
+	 * authenticated call; bind it to the current revision before issuing it. */
+	if (revision > app->call.revision || !qmodem_voip_session_is_authorized(session_id) ||
 	    qmodem_voip_browser_token_issue(&app->browser.tokens, session_id, revision,
 		origin, NULL, (uint64_t)time(NULL), token) != 0)
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_INVALID_ARGUMENT,
@@ -288,7 +306,7 @@ int qmodem_voip_media_manager_init(struct qmodem_voip_context *context)
 void qmodem_voip_media_manager_shutdown(struct qmodem_voip_context *context)
 {
 	(void)context;
-	qmodem_voip_browser_media_stop(&context->browser);
+	qmodem_voip_browser_media_release(&context->browser);
 	qmodem_voip_rtp_release(&context->rtp);
 	qmodem_voip_media_socket_stop(&context->media_sock);
 	qmodem_voip_media_release(&context->media);

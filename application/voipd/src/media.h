@@ -16,7 +16,9 @@ struct _snd_pcm;
 #define QMODEM_VOIP_MEDIA_SAMPLES 160U
 #define QMODEM_VOIP_BROWSER_SAMPLES 960U
 #define QMODEM_VOIP_PCM_MAX_SAMPLES 1920U
-#define QMODEM_VOIP_MEDIA_QUEUE_FRAMES 10U
+/* Keep roughly half a second of 20 ms frames so short USB/WS scheduling
+ * jitter does not turn into audible gaps, while bounding end-to-end delay. */
+#define QMODEM_VOIP_MEDIA_QUEUE_FRAMES 25U
 #define QMODEM_VOIP_MEDIA_PRODUCT "RM520N-GL"
 #define QMODEM_VOIP_SERIAL_FRAME_BYTES (QMODEM_VOIP_MEDIA_SAMPLES * sizeof(int16_t))
 #define QMODEM_VOIP_SERIAL_PLAYBACK_FRAMES 5U

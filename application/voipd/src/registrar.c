@@ -456,6 +456,7 @@ static int set_lan_answer(pjsip_rx_data *request, pjsip_tx_data *response,
 	pj_str_t text;
 	pjsip_to_hdr *to;
 	pjsip_contact_hdr *contact;
+	pjsip_uri *parsed_contact;
 	char address[INET_ADDRSTRLEN];
 	char body[512];
 	char contact_value[64];
@@ -494,7 +495,10 @@ static int set_lan_answer(pjsip_rx_data *request, pjsip_tx_data *response,
 	if (length < 0 || length >= (int)sizeof(contact_value))
 		return -1;
 	contact = pjsip_contact_hdr_create(response->pool);
-	contact->uri = pjsip_parse_uri(response->pool, contact_value, length, 0);
+	parsed_contact = pjsip_parse_uri(response->pool, contact_value, length, 0);
+	if (!parsed_contact)
+		return -1;
+	contact->uri = (pjsip_uri *)pjsip_uri_clone(response->pool, parsed_contact);
 	if (!contact->uri)
 		return -1;
 	pjsip_msg_add_hdr(response->msg, (pjsip_hdr *)contact);

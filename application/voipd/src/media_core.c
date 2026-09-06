@@ -263,8 +263,6 @@ int qmodem_voip_media_attach(struct qmodem_voip_media_engine *engine,
 		return -1;
 	engine->session_id = session_id;
 	engine->attachment = attachment;
-	if (engine->backend == QMODEM_VOIP_MEDIA_BACKEND_SERIAL)
-		qmodem_voip_serial_set_attached(engine, 1);
 	return 0;
 }
 
@@ -283,8 +281,11 @@ void qmodem_voip_media_detach(struct qmodem_voip_media_engine *engine)
 
 void qmodem_voip_media_release(struct qmodem_voip_media_engine *engine)
 {
+	struct qmodem_voip_modem_profile profile;
+
 	if (!engine)
 		return;
+	profile = engine->profile;
 #ifndef QMODEM_VOIP_HOST_TEST
 	if (engine->backend == QMODEM_VOIP_MEDIA_BACKEND_UAC && engine->capture_pcm)
 		snd_pcm_close(engine->capture_pcm);
@@ -298,6 +299,7 @@ void qmodem_voip_media_release(struct qmodem_voip_media_engine *engine)
 	if (engine->canonical_to_modem.lock_ready)
 		(void)pthread_mutex_destroy(&engine->canonical_to_modem.lock);
 	zero(engine, sizeof(*engine));
+	engine->profile = profile;
 }
 
 int qmodem_voip_media_rtp_receive(struct qmodem_voip_media_engine *engine,

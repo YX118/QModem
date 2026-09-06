@@ -25,7 +25,17 @@ struct qmodem_voip_context {
 	char media_socket_path[QMODEM_VOIP_MEDIA_SOCKET_PATH_MAX];
 	struct uloop_timeout browser_timer;
 	struct uloop_timeout call_timer;
+	struct uloop_timeout activation_timer;
+	struct uloop_timeout restart_timer;
+	struct uloop_process serial_arm_process;
+	struct uloop_process voice_restart_process;
+	uint64_t voice_restart_revision;
+	int voice_restart_needed;
 	int command_failed;
+	unsigned int serial_active_arm_attempts;
+	unsigned int serial_active_generation;
+	unsigned int serial_arm_process_generation;
+	int start_enabled;
 	int stop;
 };
 
@@ -62,6 +72,8 @@ void qmodem_voip_publish_event(const struct qmodem_voip_call *call,
 			       const char *event, void *opaque);
 void qmodem_voip_issue_at(const char *command, void *opaque);
 void qmodem_voip_cancel_serial_prepare(void);
+int qmodem_voip_prepare_adb(const struct qmodem_voip_modem_profile *profile);
+int qmodem_voip_prepare_media_gate(const struct qmodem_voip_modem_profile *profile);
 void qmodem_voip_add_redacted_status(struct blob_buf *buffer,
 				     const struct qmodem_voip_call *call);
 int qmodem_voip_reply_status(struct ubus_context *ubus,
@@ -70,6 +82,8 @@ int qmodem_voip_reply_status(struct ubus_context *ubus,
 int qmodem_voip_reply_ok_snapshot(struct ubus_context *ubus,
 				  struct ubus_request_data *request);
 void qmodem_voip_call_timer(struct uloop_timeout *timeout);
+void qmodem_voip_activation_timer(struct uloop_timeout *timeout);
+void qmodem_voip_restart_timer(struct uloop_timeout *timeout);
 int qmodem_voip_correlation_parse(const char *value);
 int qmodem_voip_session_is_authorized(const char *session_id);
 void at_line_event(struct ubus_context *ubus,

@@ -53,7 +53,13 @@ struct qmodem_voip_media_socket_message {
 		struct { uint32_t state; uint32_t revision; } state;
 		struct { uint32_t code; } error;
 	} body;
-};
+} __attribute__((packed));
+
+_Static_assert(sizeof(struct qmodem_voip_media_socket_header) == 12U,
+	"media socket wire header must remain 12 bytes");
+_Static_assert(offsetof(struct qmodem_voip_media_socket_message, body) ==
+	sizeof(struct qmodem_voip_media_socket_header),
+	"media socket payload must immediately follow the wire header");
 
 struct qmodem_voip_media_socket_peer {
 	struct qmodem_voip_media_socket *owner;
@@ -94,6 +100,7 @@ int qmodem_voip_media_socket_start(struct qmodem_voip_media_socket *socket,
 				   struct qmodem_voip_media_engine *engine,
 				   void *context, const char *path);
 void qmodem_voip_media_socket_stop(struct qmodem_voip_media_socket *socket);
+void qmodem_voip_media_socket_release(struct qmodem_voip_media_socket *socket);
 int qmodem_voip_media_socket_service(struct qmodem_voip_media_socket *socket,
 				     uint64_t timestamp_ms);
 /*

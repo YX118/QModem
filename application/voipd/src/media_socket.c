@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <syslog.h>
 #include <unistd.h>
 
 /* A DATAGRAM-LIKE SOCK_SEQPACKET unix socket carries one media or control frame
@@ -173,11 +174,22 @@ static void channel_peer(struct uloop_fd *fd_event, unsigned events)
 			return;
 		memcpy(&attach, &message.body.attach, sizeof(attach));
 		attach.session_id[sizeof(attach.session_id) - 1U] = '\0';
-		if (attach.call_revision != app->call.revision ||
-		    (!qmodem_voip_media_socket_session_valid(socket,
+		if (attach.call_revision != app->call.revision) {
+			syslog(LOG_WARNING,
+				"qmodem_voip media socket: stale revision %llu current %llu",
+				(unsigned long long)attach.call_revision,
+				(unsigned long long)app->call.revision);
+			(void)send_message(socket, peer->fd,
+				QMODEM_VOIP_MEDIA_SOCKET_ERROR, NULL, 0);
+			return;
+		}
+		if (!qmodem_voip_media_socket_session_valid(socket,
 			attach.session_id, attach.call_revision,
 			(uint64_t)time(NULL)) &&
-		     !qmodem_voip_session_is_authorized(attach.session_id))) {
+		    !qmodem_voip_session_is_authorized(attach.session_id)) {
+			syslog(LOG_WARNING,
+				"qmodem_voip media socket: session rejected for revision %llu",
+				(unsigned long long)attach.call_revision);
 			(void)send_message(socket, peer->fd,
 				QMODEM_VOIP_MEDIA_SOCKET_ERROR, NULL, 0);
 			return;
@@ -185,6 +197,9 @@ static void channel_peer(struct uloop_fd *fd_event, unsigned events)
 		if (qmodem_voip_media_attach(socket->engine,
 			QMODEM_VOIP_MEDIA_ATTACH_SOCKET,
 			session_hash(attach.session_id)) != 0) {
+			syslog(LOG_WARNING,
+				"qmodem_voip media socket: media owner conflict at revision %llu",
+				(unsigned long long)attach.call_revision);
 			(void)send_message(socket, peer->fd,
 				QMODEM_VOIP_MEDIA_SOCKET_ERROR, NULL, 0);
 			return;
@@ -426,6 +441,24 @@ void qmodem_voip_media_socket_stop(struct qmodem_voip_media_socket *socket)
 		(void)unlink(socket->path);
 	socket->listener.fd = -1;
 	memset(socket->path, 0, sizeof(socket->path));
+}
+
+void qmodem_voip_media_socket_release(struct qmodem_voip_media_socket *socket)
+{
+	int attached = 0;
+	int i;
+
+	if (!socket)
+		return;
+	for (i = 0; i < (int)QMODEM_VOIP_MEDIA_SOCKET_PEERS; i++) {
+		if (socket->peers[i].attached)
+			attached = 1;
+		socket->peers[i].attached = 0;
+		socket->peers[i].call_revision = 0;
+	}
+	if (attached)
+		qmodem_voip_media_detach(socket->engine);
+	memset(socket->sessions, 0, sizeof(socket->sessions));
 }
 
 int qmodem_voip_media_socket_attached(

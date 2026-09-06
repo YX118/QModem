@@ -80,6 +80,7 @@ int qmodem_voip_browser_configure(struct qmodem_voip_browser_media *browser,
 int qmodem_voip_browser_media_start(struct qmodem_voip_browser_media *browser,
 				    uint64_t call_revision);
 void qmodem_voip_browser_media_stop(struct qmodem_voip_browser_media *browser);
+void qmodem_voip_browser_media_release(struct qmodem_voip_browser_media *browser);
 int qmodem_voip_browser_media_receive(struct qmodem_voip_browser_media *browser,
 				      const uint8_t *data, size_t length);
 int qmodem_voip_browser_media_attach(struct qmodem_voip_browser_media *browser,

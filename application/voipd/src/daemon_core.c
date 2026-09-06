@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -26,6 +27,8 @@
 #define UCI_PROGRAM "/sbin/uci"
 #define INIT_PROGRAM "/etc/init.d/qmodem_voip"
 #define REGISTRAR_PROGRAM "/usr/bin/qmodem_voip_registrar"
+#define ADB_UNLOCK_HELPER "/usr/bin/qmodem_voip_adb_unlock"
+#define ADB_PROGRAM "/usr/bin/adb"
 
 struct qmodem_voip_context qmodem_voip_ctxt;
 
@@ -85,9 +88,91 @@ static int wait_program(pid_t child)
 	return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
 }
 
+int qmodem_voip_prepare_adb(const struct qmodem_voip_modem_profile *profile)
+{
+	pid_t child;
+	int status;
+
+	if (!profile || !profile->adb_unlock)
+		return 0;
+	child = fork();
+	if (child < 0)
+		return -1;
+	if (child == 0) {
+		execl(ADB_UNLOCK_HELPER, ADB_UNLOCK_HELPER, "unlock", (char *)NULL);
+		_exit(127);
+	}
+	while (waitpid(child, &status, 0) < 0) {
+		if (errno != EINTR)
+			return -1;
+	}
+	if (!WIFEXITED(status))
+		return -1;
+	if (WEXITSTATUS(status) == 2)
+		return 1;
+	return WEXITSTATUS(status) == 0 ? 0 : -1;
+}
+
+int qmodem_voip_prepare_media_gate(const struct qmodem_voip_modem_profile *profile)
+{
+	pid_t child;
+
+	if (!profile || !profile->voice_server_media_gate)
+		return 0;
+	child = fork();
+	if (child < 0)
+		return -1;
+	if (child == 0) {
+		execl(ADB_UNLOCK_HELPER, ADB_UNLOCK_HELPER, "install-media-gate",
+			(char *)NULL);
+		_exit(127);
+	}
+	return wait_program(child);
+}
+
+static int resolve_at_port(char port[QMODEM_VOIP_AT_PORT_SIZE])
+{
+	int pipe_fd[2];
+	pid_t child;
+	ssize_t length;
+	int status;
+	if (pipe(pipe_fd) != 0)
+		return -1;
+	child = fork();
+	if (child < 0) {
+		close(pipe_fd[0]);
+		close(pipe_fd[1]);
+		return -1;
+	}
+	if (child == 0) {
+		close(pipe_fd[0]);
+		if (dup2(pipe_fd[1], STDOUT_FILENO) < 0)
+			_exit(127);
+		if (pipe_fd[1] > STDOUT_FILENO)
+			close(pipe_fd[1]);
+		execl(AT_ADAPTER, AT_ADAPTER, "endpoint", (char *)NULL);
+		_exit(127);
+	}
+	close(pipe_fd[1]);
+	length = read(pipe_fd[0], port, QMODEM_VOIP_AT_PORT_SIZE - 1U);
+	close(pipe_fd[0]);
+	if (waitpid(child, &status, 0) < 0 || !WIFEXITED(status) ||
+	    WEXITSTATUS(status) != 0 || length <= 0)
+		return -1;
+	port[length] = '\0';
+	while (length > 0 && (port[length - 1] == '\n' || port[length - 1] == '\r'))
+		port[--length] = '\0';
+	return length > 0 ? 0 : -1;
+}
+
 static int run_at(const char *command)
 {
-	pid_t child = fork();
+	char port[QMODEM_VOIP_AT_PORT_SIZE];
+	pid_t child;
+	if (resolve_at_port(port) != 0 ||
+	    qmodem_voip_call_select_at_port(&qmodem_voip_ctxt.call, port) < 0)
+		return -1;
+	child = fork();
 	if (child < 0)
 		return -1;
 	if (child == 0) {
@@ -115,6 +200,110 @@ static int run_safety(const char *action, int quiet)
 		_exit(127);
 	}
 	return wait_program(child);
+}
+
+static void serial_arm_process_done(struct uloop_process *process, int status)
+{
+	struct qmodem_voip_context *app = &qmodem_voip_ctxt;
+	(void)process;
+	if (app->serial_arm_process_generation != app->serial_active_generation ||
+	    app->call.state != QMODEM_VOIP_ACTIVE)
+		return;
+	/* QPCMV must be armed before ATD/ATA. Reopening the tty after the
+	 * call becomes active tears down the modem's live RX stream; keep the
+	 * existing fd and let the pre-call recovery own stream setup. */
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+		app->call.state = QMODEM_VOIP_FAULT;
+		qmodem_voip_call_touch(&app->call);
+		qmodem_voip_publish_event(&app->call, "fault", app);
+	} else {
+		/* The timer retries only while attempts is in [1, 3]. */
+		app->serial_active_arm_attempts = 4;
+	}
+}
+
+static int start_serial_arm(struct qmodem_voip_context *app)
+{
+	pid_t child;
+	if (app->serial_arm_process.pending)
+		return 0;
+	child = fork();
+	if (child < 0)
+		return -1;
+	if (child == 0) {
+		int null_fd = open("/dev/null", O_WRONLY);
+		if (null_fd < 0 || dup2(null_fd, STDOUT_FILENO) < 0 ||
+		    dup2(null_fd, STDERR_FILENO) < 0)
+			_exit(127);
+		if (null_fd > STDERR_FILENO)
+			close(null_fd);
+		execl(SAFETY_HELPER, SAFETY_HELPER, "arm", (char *)NULL);
+		_exit(127);
+	}
+	app->serial_arm_process.cb = serial_arm_process_done;
+	app->serial_arm_process.pid = child;
+	app->serial_arm_process_generation = app->serial_active_generation;
+	if (uloop_process_add(&app->serial_arm_process) != 0)
+		return -1;
+	app->serial_active_arm_attempts++;
+	return 0;
+}
+
+static void voice_restart_process_done(struct uloop_process *process, int status)
+{
+	(void)process;
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		syslog(LOG_ERR, "voice-server restart command failed");
+	else
+		syslog(LOG_NOTICE, "voice-server restart completed");
+}
+
+static void restart_voice_server(struct qmodem_voip_context *app)
+{
+	pid_t child;
+	char command[256];
+
+	if (!app->media.profile.voice_server_restart ||
+	    !app->media.profile.voice_server_service[0]) {
+		syslog(LOG_ERR, "voice-server recovery requested without profile support");
+		return;
+	}
+	if (app->voice_restart_process.pending) {
+		syslog(LOG_INFO, "voice-server recovery already in progress");
+		return;
+	}
+	if (app->voice_restart_revision == app->call.revision) {
+		syslog(LOG_INFO, "voice-server recovery already attempted for revision %llu",
+			(unsigned long long)app->call.revision);
+		return;
+	}
+	if (app->media.profile.voice_server_dependency_service[0])
+		(void)snprintf(command, sizeof(command),
+			"systemctl restart %s && systemctl restart %s",
+			app->media.profile.voice_server_dependency_service,
+			app->media.profile.voice_server_service);
+	else
+		(void)snprintf(command, sizeof(command), "systemctl restart %s",
+			app->media.profile.voice_server_service);
+	child = fork();
+	if (child < 0) {
+		syslog(LOG_ERR, "unable to fork voice-server restart");
+		return;
+	}
+	if (child == 0) {
+		execl(ADB_PROGRAM, ADB_PROGRAM, "shell", command,
+			(char *)NULL);
+		_exit(127);
+	}
+	app->voice_restart_revision = app->call.revision;
+	syslog(LOG_NOTICE, "voice-server recovery scheduled after call revision %llu%s",
+		(unsigned long long)app->call.revision,
+		app->media.profile.voice_server_dependency_service[0] ?
+			" (with dependency service)" : "");
+	app->voice_restart_process.cb = voice_restart_process_done;
+	app->voice_restart_process.pid = child;
+	if (uloop_process_add(&app->voice_restart_process) != 0)
+		syslog(LOG_ERR, "unable to monitor voice-server restart");
 }
 
 static int journal_enabled(void)
@@ -178,6 +367,23 @@ static int commit_sip_config(void)
 		_exit(127);
 	}
 	return wait_program(child);
+}
+
+static int set_application_enabled(int enabled)
+{
+	pid_t child = fork();
+	if (child < 0)
+		return -1;
+	if (child == 0) {
+		char *const arguments[] = { "uci", "set",
+			enabled ? "qmodem_voip.main.enabled=1" :
+				"qmodem_voip.main.enabled=0", NULL };
+		execv(UCI_PROGRAM, arguments);
+		_exit(127);
+	}
+	if (wait_program(child) != 0)
+		return -1;
+	return commit_sip_config();
 }
 
 static int set_firewall_enabled(int enabled)
@@ -332,6 +538,9 @@ static int action_call(struct ubus_context *ubus,
 	    endpoint == QMODEM_VOIP_ENDPOINT_EXTERNAL_SIP)
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_INVALID_ARGUMENT,
 				    "invalid_endpoint", "endpoint is unsupported");
+	if (!app->call.enabled)
+		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
+				    "disabled", "qmodem voip is disabled");
 	app->command_failed = 0;
 	if (strcmp(action, "originate") == 0) {
 		if (!parameters[PARAM_NUMBER])
@@ -340,16 +549,32 @@ static int action_call(struct ubus_context *ubus,
 		if (app->call.state != QMODEM_VOIP_IDLE)
 			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
 					    "busy", "another call or answer owner exists");
+		if (app->voice_restart_process.pending)
+			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
+					    "media_not_ready", "modem voice service is recovering");
+		/* The modem can reboot after the startup check while its USB functions
+		 * are being re-enumerated. Revalidate the running voice-server process
+		 * at the call boundary so an un-gated process can never own PCM. */
+		if (qmodem_voip_prepare_media_gate(&app->media.profile) != 0)
+			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
+				"media_not_ready", "modem voice media gate is not active");
 		if (!journal_enabled() || run_safety("recover", 1) != 0)
 			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
 				"media_not_ready", "modem PCM forwarding could not be armed");
 		qmodem_voip_serial_prepare_call(&app->media);
+		app->serial_active_arm_attempts = 0;
 		number = blobmsg_get_string(parameters[PARAM_NUMBER]);
 		result = qmodem_voip_originate(&app->call, endpoint, number,
 					       qmodem_voip_issue_at, app);
 		if (result != 0)
 			qmodem_voip_cancel_serial_prepare();
 	} else if (strcmp(action, "answer") == 0) {
+		if (app->voice_restart_process.pending)
+			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
+					    "media_not_ready", "modem voice service is recovering");
+		if (qmodem_voip_prepare_media_gate(&app->media.profile) != 0)
+			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
+				"media_not_ready", "modem voice media gate is not active");
 		if (!journal_enabled() || run_safety("recover", 1) != 0)
 			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
 				"media_not_ready", "modem PCM forwarding could not be armed");
@@ -437,6 +662,97 @@ static int capabilities_method(struct ubus_context *ubus,
 	return UBUS_STATUS_OK;
 }
 
+enum qmodem_voip_activation_result {
+	QMODEM_VOIP_ACTIVATION_FAILED = -1,
+	QMODEM_VOIP_ACTIVATION_READY = 0,
+	QMODEM_VOIP_ACTIVATION_RESTART = 1
+};
+
+static void release_runtime(struct qmodem_voip_context *app)
+{
+	uloop_timeout_cancel(&app->browser_timer);
+	qmodem_voip_browser_media_stop(&app->browser);
+	qmodem_voip_rtp_release(&app->rtp);
+	qmodem_voip_media_socket_stop(&app->media_sock);
+	qmodem_voip_media_release(&app->media);
+}
+
+static int activate_runtime(struct qmodem_voip_context *app)
+{
+	int result;
+
+	result = qmodem_voip_prepare_adb(&app->media.profile);
+	if (result < 0) {
+		syslog(LOG_ERR, "ADB unlock check failed");
+		return QMODEM_VOIP_ACTIVATION_FAILED;
+	}
+	if (result > 0) {
+		syslog(LOG_NOTICE,
+			"ADB enabled; waiting for modem USB re-enumeration");
+		return QMODEM_VOIP_ACTIVATION_RESTART;
+	}
+	if (qmodem_voip_prepare_media_gate(&app->media.profile) != 0) {
+		syslog(LOG_ERR, "voice-server media gate installation failed");
+		return QMODEM_VOIP_ACTIVATION_FAILED;
+	}
+	if (run_safety("enable", 0) != 0)
+		return QMODEM_VOIP_ACTIVATION_FAILED;
+	if (qmodem_voip_media_engine_start(&app->media) != 0) {
+		(void)run_safety("disable", 0);
+		return QMODEM_VOIP_ACTIVATION_FAILED;
+	}
+	qmodem_voip_call_set_enabled(&app->call, 1);
+	app->command_failed = 0;
+	result = qmodem_voip_start_recovery(&app->call,
+		qmodem_voip_issue_at, app);
+	if (result != 0 || app->command_failed) {
+		release_runtime(app);
+		(void)run_safety("disable", 0);
+		qmodem_voip_call_set_enabled(&app->call, 0);
+		return QMODEM_VOIP_ACTIVATION_FAILED;
+	}
+	uloop_timeout_set(&app->browser_timer, 20);
+	qmodem_voip_publish_event(&app->call, "enabled", app);
+	return QMODEM_VOIP_ACTIVATION_READY;
+}
+
+static void schedule_modem_reenumeration(struct qmodem_voip_context *app)
+{
+	qmodem_voip_call_set_enabled(&app->call, 1);
+	app->call.state = QMODEM_VOIP_RECOVERING;
+	qmodem_voip_call_touch(&app->call);
+	uloop_timeout_set(&app->restart_timer, 500);
+}
+
+void qmodem_voip_activation_timer(struct uloop_timeout *timeout)
+{
+	struct qmodem_voip_context *app = &qmodem_voip_ctxt;
+	int result;
+	(void)timeout;
+
+	if (!app->start_enabled || app->call.enabled)
+		return;
+	result = activate_runtime(app);
+	if (result == QMODEM_VOIP_ACTIVATION_RESTART) {
+		schedule_modem_reenumeration(app);
+		return;
+	}
+	if (result == QMODEM_VOIP_ACTIVATION_FAILED) {
+		app->start_enabled = 0;
+		(void)set_application_enabled(0);
+		syslog(LOG_ERR,
+			"persisted qmodem voip enable failed; application disabled");
+	}
+}
+
+void qmodem_voip_restart_timer(struct uloop_timeout *timeout)
+{
+	struct qmodem_voip_context *app = &qmodem_voip_ctxt;
+	(void)timeout;
+	app->stop = 1;
+	uloop_end();
+}
+
 static int enable_method(struct ubus_context *ubus, struct ubus_object *object,
 			 struct ubus_request_data *request, const char *method,
 			 struct blob_attr *message)
@@ -449,26 +765,21 @@ static int enable_method(struct ubus_context *ubus, struct ubus_object *object,
 	app->command_failed = 0;
 	if (app->call.enabled)
 		return qmodem_voip_reply_ok_snapshot(ubus, request);
-	if (run_safety("enable", 0) != 0)
-		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
-				    "unsupported", "unsupported or unsafe modem");
-	qmodem_voip_call_set_enabled(&app->call, 1);
-	if (qmodem_voip_media_engine_start(&app->media) != 0) {
-		(void)run_safety("disable", 0);
-		qmodem_voip_call_set_enabled(&app->call, 0);
-		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
-				    "media_not_ready", "selected modem media backend is unavailable");
-	}
-	app->command_failed = 0;
-	result = qmodem_voip_start_recovery(&app->call, qmodem_voip_issue_at, app);
-	if (result != 0 || app->command_failed) {
-		app->call.state = QMODEM_VOIP_FAULT;
-		qmodem_voip_call_touch(&app->call);
-		qmodem_voip_publish_event(&app->call, "fault", app);
+	if (set_application_enabled(1) != 0)
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_UNKNOWN_ERROR,
-				    "at_failed", "startup recovery failed");
+				    "config_failed", "application enable could not be persisted");
+	app->start_enabled = 1;
+	result = activate_runtime(app);
+	if (result == QMODEM_VOIP_ACTIVATION_RESTART) {
+		schedule_modem_reenumeration(app);
+		return qmodem_voip_reply_ok_snapshot(ubus, request);
 	}
-	qmodem_voip_publish_event(&app->call, "enabled", app);
+	if (result == QMODEM_VOIP_ACTIVATION_FAILED) {
+		app->start_enabled = 0;
+		(void)set_application_enabled(0);
+		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
+				    "unsupported", "unsupported or unsafe modem media path");
+	}
 	return qmodem_voip_reply_ok_snapshot(ubus, request);
 }
 
@@ -481,13 +792,20 @@ static int disable_method(struct ubus_context *ubus, struct ubus_object *object,
 	(void)method;
 	(void)message;
 	app->command_failed = 0;
-	if (app->call.enabled && run_safety("disable", 0) != 0)
+	if (set_application_enabled(0) != 0)
+		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_UNKNOWN_ERROR,
+				    "config_failed", "application disable could not be persisted");
+	app->start_enabled = 0;
+	if (app->restart_timer.pending) {
+		uloop_timeout_cancel(&app->restart_timer);
+	} else if (app->call.enabled && run_safety("disable", 0) != 0) {
+		app->start_enabled = 1;
+		(void)set_application_enabled(1);
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_UNKNOWN_ERROR,
 				    "restore_failed", "modem restore failed");
+	}
 	qmodem_voip_call_set_enabled(&app->call, 0);
-	qmodem_voip_browser_media_stop(&app->browser);
-	qmodem_voip_rtp_release(&app->rtp);
-	qmodem_voip_media_release(&app->media);
+	release_runtime(app);
 	qmodem_voip_publish_event(&app->call, "disabled", app);
 	return qmodem_voip_reply_ok_snapshot(ubus, request);
 }
@@ -588,21 +906,49 @@ void qmodem_voip_publish_event(const struct qmodem_voip_call *call,
 	(void)app;
 	if (call->state == QMODEM_VOIP_ACTIVE &&
 	    app->media.backend == QMODEM_VOIP_MEDIA_BACKEND_SERIAL &&
-	    qmodem_voip_serial_reopen(&app->media) != 0) {
-		app->call.state = QMODEM_VOIP_FAULT;
-		qmodem_voip_call_touch(&app->call);
+	    app->serial_active_arm_attempts == 0) {
+		app->serial_active_generation++;
+		app->serial_active_arm_attempts = 1;
+	}
+	if (app->media.backend == QMODEM_VOIP_MEDIA_BACKEND_SERIAL &&
+	    (call->state == QMODEM_VOIP_EARLY_MEDIA ||
+	     call->state == QMODEM_VOIP_ACTIVE))
+		qmodem_voip_serial_set_attached(&app->media, 1);
+	if (call->state == QMODEM_VOIP_OUTGOING_SETUP ||
+	    call->state == QMODEM_VOIP_INCOMING_RINGING ||
+	    call->state == QMODEM_VOIP_EARLY_MEDIA ||
+	    call->state == QMODEM_VOIP_ACTIVE ||
+	    call->state == QMODEM_VOIP_TERMINATING) {
+		if (!app->voice_restart_needed)
+			syslog(LOG_INFO, "voice-server recovery armed by call state %s",
+				qmodem_voip_state_name(call->state));
+		app->voice_restart_needed = 1;
+	}
+	if (call->state == QMODEM_VOIP_IDLE ||
+	    call->state == QMODEM_VOIP_TERMINATING ||
+	    call->state == QMODEM_VOIP_DISABLED ||
+	    call->state == QMODEM_VOIP_FAULT) {
+		app->serial_active_arm_attempts = 0;
+		app->serial_active_generation++;
+		if (app->rtp.active)
+			qmodem_voip_rtp_release(&app->rtp);
+		qmodem_voip_media_socket_release(&app->media_sock);
 	}
 	if ((call->state == QMODEM_VOIP_IDLE ||
 	     call->state == QMODEM_VOIP_TERMINATING ||
 	     call->state == QMODEM_VOIP_DISABLED ||
-	     call->state == QMODEM_VOIP_FAULT) && app->rtp.active)
-		qmodem_voip_rtp_release(&app->rtp);
-	if ((call->state == QMODEM_VOIP_IDLE ||
-	     call->state == QMODEM_VOIP_TERMINATING ||
-	     call->state == QMODEM_VOIP_DISABLED ||
 	     call->state == QMODEM_VOIP_FAULT) &&
-	    app->media.backend == QMODEM_VOIP_MEDIA_BACKEND_SERIAL)
+	    app->media.backend == QMODEM_VOIP_MEDIA_BACKEND_SERIAL) {
+		qmodem_voip_serial_set_attached(&app->media, 0);
 		qmodem_voip_serial_reset_stream(&app->media);
+	}
+	if (call->state == QMODEM_VOIP_IDLE && app->voice_restart_needed) {
+		syslog(LOG_INFO,
+			"voice-server recovery requested at idle revision %llu",
+			(unsigned long long)call->revision);
+		app->voice_restart_needed = 0;
+		restart_voice_server(app);
+	}
 	qmodem_voip_media_sync();
 	blob_buf_init(&buffer, 0);
 	blobmsg_add_string(&buffer, "event", event);
@@ -628,6 +974,7 @@ void at_line_event(struct ubus_context *ubus,
 {
 	struct qmodem_voip_context *app = &qmodem_voip_ctxt;
 	static const struct blobmsg_policy policy[] = {
+		{ .name = "port", .type = BLOBMSG_TYPE_STRING },
 		{ .name = "restart_epoch", .type = BLOBMSG_TYPE_INT64 },
 		{ .name = "sequence", .type = BLOBMSG_TYPE_INT64 },
 		{ .name = "raw_line", .type = BLOBMSG_TYPE_STRING },
@@ -642,16 +989,17 @@ void at_line_event(struct ubus_context *ubus,
 	(void)type;
 	blobmsg_parse(policy, ARRAY_SIZE(policy), values, blob_data(message),
 		      blob_len(message));
-	if (!values[0] || !values[1] || !values[2])
+	if (!values[0] || !values[1] || !values[2] || !values[3])
 		return;
-	if (values[4])
-		command_id = blobmsg_get_u64(values[4]);
-	correlation = values[3] ? blobmsg_get_string(values[3]) : NULL;
+	if (values[5])
+		command_id = blobmsg_get_u64(values[5]);
+	correlation = values[4] ? blobmsg_get_string(values[4]) : NULL;
 	app->command_failed = 0;
-	(void)qmodem_voip_line(&app->call, blobmsg_get_u64(values[0]),
-			       blobmsg_get_u64(values[1]), blobmsg_get_string(values[2]),
+	(void)qmodem_voip_line(&app->call, blobmsg_get_string(values[0]),
+			       blobmsg_get_u64(values[1]), blobmsg_get_u64(values[2]),
+			       blobmsg_get_string(values[3]),
 			       qmodem_voip_correlation_parse(correlation), command_id,
-			       values[5] ? blobmsg_get_u64(values[5]) : 0,
+			       values[6] ? blobmsg_get_u64(values[6]) : 0,
 			       qmodem_voip_issue_at, qmodem_voip_publish_event, app);
 	if (app->command_failed) {
 		app->call.state = QMODEM_VOIP_FAULT;
@@ -665,6 +1013,20 @@ void qmodem_voip_call_timer(struct uloop_timeout *timeout)
 {
 	struct qmodem_voip_context *app = &qmodem_voip_ctxt;
 	(void)timeout;
+	if (app->call.state == QMODEM_VOIP_ACTIVE &&
+	    app->media.backend == QMODEM_VOIP_MEDIA_BACKEND_SERIAL &&
+	    app->serial_active_arm_attempts > 0 &&
+	    app->serial_active_arm_attempts <= 3) {
+		if (start_serial_arm(app) != 0) {
+			app->call.state = QMODEM_VOIP_FAULT;
+			qmodem_voip_call_touch(&app->call);
+			qmodem_voip_publish_event(&app->call, "fault", app);
+		}
+	}
+	if (app->serial_arm_process.pending) {
+		uloop_timeout_set(&app->call_timer, 1000);
+		return;
+	}
 	if (app->call.enabled &&
 	    (app->call.state == QMODEM_VOIP_OUTGOING_SETUP ||
 	     app->call.state == QMODEM_VOIP_EARLY_MEDIA)) {
