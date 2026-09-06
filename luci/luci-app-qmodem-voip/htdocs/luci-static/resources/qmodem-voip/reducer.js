@@ -48,6 +48,8 @@ function copySnapshot(input) {
 		answer_owner: String(input.answer_owner || 'none'),
 		number_present: asBoolean(input.number_present),
 		caller_id_withheld: asBoolean(input.caller_id_withheld),
+		remote_number: String(input.remote_number || ''),
+		call_duration_seconds: Math.max(0, Number(input.call_duration_seconds) || 0),
 		revision: input.revision ?? 0,
 		restart_epoch: input.restart_epoch ?? 0,
 		sequence: input.sequence ?? 0,
@@ -140,6 +142,7 @@ function errorMessage(error) {
 		busy: _('Another endpoint answered this call first.'),
 		invalid_state: _('The call changed state before this command completed.'),
 		at_failed: _('The modem call command failed.'),
+		invalid_dtmf: _('The selected DTMF key is not supported.'),
 		unsupported: _('This operation is not ready for the current capability state.'),
 		restore_failed: _('The modem could not restore its baseline state.'),
 		invalid_credentials: _('The SIP credentials were rejected.'),
@@ -164,7 +167,8 @@ function viewModel(state) {
 		canReject: canControl && [ 'incoming_ringing', 'early_media' ].indexOf(snapshot.state) !== -1,
 		canHangup: canControl && [ 'outgoing_setup', 'early_media', 'active' ].indexOf(snapshot.state) !== -1,
 		canMute: canControl && snapshot.state === 'active',
-		canKeypad: false
+		canKeypad: canControl && snapshot.state === 'active' &&
+			(snapshot.origin === 'browser' || snapshot.answer_owner === 'browser')
 	});
 
 	let disabledReason = '';
@@ -185,6 +189,8 @@ function viewModel(state) {
 		disabledReason,
 		state: snapshot.state,
 		callTimerVisible: [ 'outgoing_setup', 'early_media', 'active', 'terminating' ].indexOf(snapshot.state) !== -1,
+		remoteNumber: snapshot.caller_id_withheld ? '' : snapshot.remote_number,
+		callDurationSeconds: snapshot.call_duration_seconds,
 		registration: state.credentialStatus === 'configured' ? 'configured' : state.credentialStatus,
 		media: state.mediaStatus,
 		permission: state.mediaPermission,

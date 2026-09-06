@@ -66,8 +66,24 @@ const client = media.createMediaClient({
 	assert.equal(client.isConnected(), true);
 	assert.equal(client.hasAudio(), false);
 	assert.deepEqual(socket.sent, [], 'the authenticated token is URL-only; startup must not send a text frame');
-	socket.readyState = 3;
-	socket.onclose({ code: 1006 });
+	client.disconnect();
+	assert.equal(client.isConnected(), false);
+	assert.equal(client.hasAudio(), false);
+
+	const reconnect = client.connect({
+		media: 'ready',
+		url: 'wss://router.example:9443/media',
+		sessionId: '0123456789abcdef0123456789abcdef',
+		callRevision: 42,
+		httpsOrigin: 'https://router.example'
+	});
+	await Promise.resolve();
+	const secondSocket = sockets[1];
+	secondSocket.readyState = 1;
+	secondSocket.onopen();
+	assert.equal(await reconnect, secondSocket);
+	secondSocket.readyState = 3;
+	secondSocket.onclose({ code: 1006 });
 	assert.equal(client.isConnected(), false);
 	assert.equal(disconnects, 1);
 

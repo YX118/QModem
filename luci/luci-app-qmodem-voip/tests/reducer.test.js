@@ -7,7 +7,7 @@ global._ = (value) => value;
 const contract = require('../htdocs/luci-static/resources/qmodem-voip/contract.js');
 const reducer = require('../htdocs/luci-static/resources/qmodem-voip/reducer.js');
 
-assert.deepEqual(Object.values(contract.METHODS), [ 'status', 'capabilities', 'enable', 'disable', 'originate', 'answer', 'reject', 'hangup', 'set_sip_credentials', 'issue_media_token' ]);
+assert.deepEqual(Object.values(contract.METHODS), [ 'status', 'capabilities', 'enable', 'disable', 'originate', 'answer', 'reject', 'hangup', 'send_dtmf', 'set_sip_credentials', 'issue_media_token' ]);
 assert.deepEqual(contract.PARAMS.status, []);
 assert.deepEqual(contract.PARAMS.capabilities, []);
 assert.deepEqual(contract.PARAMS.enable, []);
@@ -16,9 +16,10 @@ assert.deepEqual(contract.PARAMS.originate, [ 'endpoint', 'number' ]);
 assert.deepEqual(contract.PARAMS.answer, [ 'endpoint' ]);
 assert.deepEqual(contract.PARAMS.reject, [ 'endpoint' ]);
 assert.deepEqual(contract.PARAMS.hangup, [ 'endpoint' ]);
+assert.deepEqual(contract.PARAMS.sendDtmf, [ 'endpoint', 'digit' ]);
 assert.deepEqual(contract.PARAMS.setSipCredentials, [ 'username', 'password' ]);
 assert.deepEqual(contract.PARAMS.issueMediaToken, [ 'session_id', 'call_revision', 'https_origin' ]);
-assert.deepEqual(contract.ERROR_CODES.slice(-2), [ 'invalid_credentials', 'activation_failed' ]);
+assert.ok(contract.ERROR_CODES.includes('invalid_dtmf'));
 assert.equal(contract.OBJECT, 'qmodem_voip');
 assert.equal(contract.EVENT_TOPIC, 'qmodem_voip.call');
 
@@ -41,7 +42,14 @@ assert.equal(reducer.viewModel(model(supported, snapshot('disabled', 0, { enable
 assert.equal(reducer.viewModel(model(supported, snapshot('idle', 1))).canOriginate, true);
 assert.equal(reducer.viewModel(model(supported, snapshot('outgoing_setup', 2, { origin: 'browser', endpoint: 'cellular', number_present: true }))).canHangup, true);
 assert.equal(reducer.viewModel(model(supported, snapshot('incoming_ringing', 3, { caller_id_withheld: true }))).canAnswer, true);
-assert.equal(reducer.viewModel(model(supported, snapshot('active', 4, { answer_owner: 'browser' }))).canMute, true);
+const activeBrowser = reducer.viewModel(model(supported, snapshot('active', 4, {
+	answer_owner: 'browser', number_present: true, remote_number: '10086', call_duration_seconds: 42
+})));
+assert.equal(activeBrowser.canMute, true);
+assert.equal(activeBrowser.canKeypad, true);
+assert.equal(activeBrowser.remoteNumber, '10086');
+assert.equal(activeBrowser.callDurationSeconds, 42);
+assert.equal(reducer.viewModel(model(supported, snapshot('active', 4, { answer_owner: 'lan_sip' }))).canKeypad, false);
 assert.equal(reducer.viewModel(model(supported, snapshot('recovering', 5, { reconcile_pending: true }))).canHangup, false);
 assert.equal(reducer.viewModel(model(supported, snapshot('fault', 6))).canOriginate, false);
 
@@ -63,6 +71,7 @@ state = reducer.reduce(state, { type: 'CREDENTIAL_RESULT', value: { status: 'err
 assert.equal(state.credentialStatus, 'not_ready');
 assert.match(reducer.errorMessage({ error: 'invalid_credentials' }), /credentials were rejected/);
 assert.match(reducer.errorMessage({ error: 'activation_failed' }), /could not be activated/);
+assert.match(reducer.errorMessage({ error: 'invalid_dtmf' }), /DTMF key/);
 
 const resourceDir = path.resolve(__dirname, '../htdocs/luci-static/resources');
 const resources = [];
@@ -79,7 +88,7 @@ assert.equal(resources.some((source) => /external[_]sip|localStorage|sessionStor
 const surfaceSource = fs.readFileSync(path.resolve(__dirname, '../htdocs/luci-static/resources/qmodem-voip/surface.js'), 'utf8');
 assert.match(surfaceSource, /class: `cbi-button cbi-button-\$\{style \|\| 'neutral'\}`/);
 assert.match(surfaceSource, /new ui\.Textfield/);
-assert.match(surfaceSource, /new ui\.Checkbox/);
+assert.doesNotMatch(surfaceSource, /new ui\.Checkbox/);
 assert.match(surfaceSource, /ui\.showModal\(_\('Incoming call'\)/);
 assert.match(surfaceSource, /ui\.hideModal\(\)/);
 assert.match(surfaceSource, /Rotate credentials'[\s\S]+null, 'submit'/);
@@ -88,10 +97,13 @@ assert.match(surfaceSource, /button\(_\('Call'\), 'action', null, 'submit'\)/);
 assert.doesNotMatch(surfaceSource, /button\(_\('Call'\)[^\n]+context\.originate/);
 assert.match(surfaceSource, /key\.disabled = true/);
 assert.match(surfaceSource, /key\.setAttribute\('aria-describedby', 'qvoip-keypad-help'\)/);
-assert.match(surfaceSource, /context\.refs\.callDetail, context\.refs\.dialForm, context\.refs\.actions/);
+assert.match(surfaceSource, /context\.refs\.callDetail,/);
+assert.match(surfaceSource, /context\.refs\.dialForm,/);
+assert.match(surfaceSource, /context\.refs\.actions,/);
 assert.doesNotMatch(surfaceSource, /role: 'alertdialog'/);
-assert.match(surfaceSource, /context\.refs\.enableLabel/);
-assert.match(surfaceSource, /context\.refs\.enableLabel = node\('span', \{\}, \[ _\('Disabled'\) \]\)/);
+assert.doesNotMatch(surfaceSource, /type:\s*'checkbox'/);
+assert.match(surfaceSource, /context\.sendDtmf\(value\)/);
+assert.match(surfaceSource, /context\.refs\.remoteParty/);
 
 const viewSource = fs.readFileSync(path.resolve(__dirname, '../htdocs/luci-static/resources/view/qmodem-voip/call.js'), 'utf8');
 assert.match(viewSource, /'require rpc as luciRpc';/);
@@ -99,8 +111,9 @@ assert.match(viewSource, /luciRpc\.getSessionID\(\)/);
 assert.match(viewSource, /rpc\[action\]\(\.\.\.\(Array\.isArray\(payload\) \? payload : \[\]\)\)/);
 assert.match(viewSource, /this\.run\('originate', \[ 'browser', number \]\)/);
 assert.match(viewSource, /this\.run\('answer', \[ 'browser' \]\)/);
+assert.match(viewSource, /this\.run\('sendDtmf', \[ 'browser', digit \]\)/);
 assert.match(viewSource, /this\.run\('setSipCredentials', \[ this\.refs\.sipUser\.value\.trim\(\), password \]/);
-assert.match(viewSource, /await this\.requestMediaStream\(\);[\s\S]+this\.run\('originate'/);
+assert.match(viewSource, /await this\.prepareBrowserAudio\(\);[\s\S]+this\.run\('originate'/);
 assert.match(viewSource, /await this\.syncMedia\(snapshot\)/);
 assert.match(viewSource, /\(!this\.pendingMediaStream && !this\.media\.hasAudio\(\)\)/);
 assert.match(viewSource, /this\.media\.isConnected\(\)/);
@@ -112,7 +125,11 @@ assert.match(viewSource, /startMedia\(\) \{[\s\S]+if \(this\.state\.mediaStatus 
 assert.match(viewSource, /this\.refs\.mediaAction\.disabled = this\.state\.mediaStatus !== 'ready'/);
 assert.doesNotMatch(viewSource, /\[ 'idle', 'disabled' \]\.indexOf\(model\.state\)[\s\S]+this\.refs\.dial\.value = ''/);
 assert.doesNotMatch(viewSource, /crypto\.randomUUID\(\)/);
-assert.match(viewSource, /this\.refs\.enableLabel\.textContent = model\.enabled \? _\('Enabled'\) : _\('Disabled'\)/);
+assert.match(viewSource, /new form\.Map\('qmodem_voip'\)/);
+assert.match(viewSource, /map\.section\(form\.NamedSection, 'main', 'main'/);
+assert.match(viewSource, /section\.option\(form\.Flag, 'enabled'/);
+assert.doesNotMatch(viewSource, /Date\.now\(\)\s*-\s*this\.(call|active)/);
+assert.match(viewSource, /this\.updateTimer\(model\.callDurationSeconds\)/);
 const cssSource = fs.readFileSync(path.resolve(__dirname, '../htdocs/luci-static/resources/qmodem-voip/qmodem-voip.css'), 'utf8');
 assert.doesNotMatch(cssSource, /--qvoip-(surface|text|accent|status)/);
 assert.match(cssSource, /\.qvoip-page \.cbi-section/);

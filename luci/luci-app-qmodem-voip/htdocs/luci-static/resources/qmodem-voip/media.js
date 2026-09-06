@@ -19,6 +19,7 @@ function createMediaClient(dependencies) {
 	let playbackSamples = [];
 	let captureSamples = [];
 	let captureSequence = 0;
+	let muted = false;
 
 	function closeSocket() {
 		if (socket) {
@@ -52,6 +53,7 @@ function createMediaClient(dependencies) {
 		playbackSamples = [];
 		captureSamples = [];
 		captureSequence = 0;
+		muted = false;
 	}
 
 	function enqueuePlayback(frame) {
@@ -86,7 +88,7 @@ function createMediaClient(dependencies) {
 		if (!socket || socket.readyState !== 1)
 			return;
 		for (const sample of samples)
-			captureSamples.push(sample);
+			captureSamples.push(muted ? 0 : sample);
 		while (captureSamples.length >= 480) {
 			const frame = captureSamples.splice(0, 480);
 			socket.send(makeCaptureFrame(frame));
@@ -170,6 +172,10 @@ function createMediaClient(dependencies) {
 	}
 
 	async function attachAudio(stream, workletUrl, AudioContextCtor) {
+		if (audioContext && audioStream) {
+			await resumeAudio();
+			return;
+		}
 		const Context = AudioContextCtor || globalThis.AudioContext;
 		if (!Context || !stream)
 			throw mediaError('unsupported', 'browser audio is unavailable');
@@ -214,9 +220,12 @@ function createMediaClient(dependencies) {
 			audioSource.connect(scriptNode);
 			scriptNode.connect(audioContext.destination);
 		}
-		/* A suspended context is normal before a user gesture.  Some Chromium
-		 * headless/WebKit builds leave resume() pending forever; it must not block
-		 * the authenticated transport from being established. */
+		await resumeAudio();
+	}
+
+	async function resumeAudio() {
+		if (!audioContext || audioContext.state !== 'suspended')
+			return;
 		try {
 			await Promise.race([
 				audioContext.resume(),
@@ -224,13 +233,14 @@ function createMediaClient(dependencies) {
 			]);
 		}
 		catch (error) {
-			/* Playback will resume on the next permitted user gesture. */
+			/* A later user gesture can resume playback. */
 		}
 	}
 
 	function setMuted(value) {
+		muted = value === true;
 		if (audioNode)
-			audioNode.port.postMessage({ type: 'mute', muted: value === true });
+			audioNode.port.postMessage({ type: 'mute', muted });
 	}
 
 	function isConnected() {
@@ -241,7 +251,16 @@ function createMediaClient(dependencies) {
 		return Boolean(audioContext && audioStream);
 	}
 
-	return Object.freeze({ connect, attachAudio, setMuted, isConnected, hasAudio, close });
+	return Object.freeze({
+		connect,
+		attachAudio,
+		resume: resumeAudio,
+		disconnect: closeSocket,
+		setMuted,
+		isConnected,
+		hasAudio,
+		close
+	});
 }
 
 const api = Object.freeze({ createMediaClient });

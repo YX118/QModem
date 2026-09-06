@@ -46,6 +46,7 @@ struct qmodem_voip_call {
 	uint64_t sequence;
 	uint64_t drop_count;
 	uint64_t revision;
+	uint64_t active_since_msec;
 	uint64_t reconcile_command_id;
 	int reconcile_pending;
 	int reconcile_saw_data;
@@ -81,6 +82,10 @@ int qmodem_voip_reject(struct qmodem_voip_call *call,
 int qmodem_voip_hangup(struct qmodem_voip_call *call,
 			       enum qmodem_voip_endpoint endpoint,
 			       qmodem_voip_command_fn command, void *opaque);
+int qmodem_voip_send_dtmf(struct qmodem_voip_call *call,
+			  enum qmodem_voip_endpoint endpoint, char digit,
+			  qmodem_voip_command_fn command, void *opaque);
+uint64_t qmodem_voip_call_duration_seconds(const struct qmodem_voip_call *call);
 int qmodem_voip_start_recovery(struct qmodem_voip_call *call,
 			       qmodem_voip_command_fn command, void *opaque);
 int qmodem_voip_poll_active(struct qmodem_voip_call *call,

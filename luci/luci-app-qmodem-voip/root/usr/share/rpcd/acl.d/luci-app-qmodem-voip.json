@@ -3,8 +3,10 @@
 		"description": "Grant read-only access to experimental QModem voice",
 		"read": {
 			"ubus": {
-				"qmodem_voip": [ "status", "capabilities" ]
-			}
+				"qmodem_voip": [ "status", "capabilities" ],
+				"uci": [ "qmodem_voip" ]
+			},
+			"uci": [ "qmodem_voip" ]
 		}
 	},
 	"luci-app-qmodem-voip-admin": {
@@ -16,8 +18,10 @@
 		},
 		"write": {
 			"ubus": {
-				"qmodem_voip": [ "enable", "disable", "originate", "answer", "reject", "hangup", "set_sip_credentials", "issue_media_token" ]
-			}
+				"qmodem_voip": [ "enable", "disable", "originate", "answer", "reject", "hangup", "send_dtmf", "set_sip_credentials", "issue_media_token" ],
+				"uci": [ "qmodem_voip" ]
+			},
+			"uci": [ "qmodem_voip" ]
 		}
 	}
 }

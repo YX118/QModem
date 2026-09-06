@@ -1,9 +1,37 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "call_state.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+static uint64_t monotonic_milliseconds(void)
+{
+	struct timespec now;
+	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+		return 0;
+	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
+}
+
+static void mark_call_active(struct qmodem_voip_call *call)
+{
+	if (!call->active_since_msec)
+		call->active_since_msec = monotonic_milliseconds();
+	call->state = QMODEM_VOIP_ACTIVE;
+}
+
+uint64_t qmodem_voip_call_duration_seconds(const struct qmodem_voip_call *call)
+{
+	uint64_t now;
+	if (!call || !call->active_since_msec)
+		return 0;
+	now = monotonic_milliseconds();
+	return now >= call->active_since_msec ?
+		(now - call->active_since_msec) / 1000U : 0;
+}
 
 static int endpoint_is_source(enum qmodem_voip_endpoint endpoint)
 {
@@ -81,6 +109,7 @@ void qmodem_voip_call_set_enabled(struct qmodem_voip_call *call, int enabled)
 		call->origin = QMODEM_VOIP_ENDPOINT_NONE;
 		call->endpoint = QMODEM_VOIP_ENDPOINT_NONE;
 		call->number[0] = '\0';
+		call->active_since_msec = 0;
 		call->answer_owner = QMODEM_VOIP_ENDPOINT_NONE;
 		call->reconcile_pending = 0;
 	} else if (call->state == QMODEM_VOIP_DISABLED) {
@@ -153,6 +182,7 @@ int qmodem_voip_originate(struct qmodem_voip_call *call,
 	strncpy(call->number, number, sizeof(call->number) - 1);
 	call->number[sizeof(call->number) - 1] = '\0';
 	call->caller_id_withheld = 0;
+	call->active_since_msec = 0;
 	call->answer_owner = QMODEM_VOIP_ENDPOINT_NONE;
 	call->reconcile_voice_misses = 0;
 	call->state = QMODEM_VOIP_OUTGOING_SETUP;
@@ -173,7 +203,7 @@ int qmodem_voip_answer(struct qmodem_voip_call *call,
 	    call->state != QMODEM_VOIP_EARLY_MEDIA)
 		return -2;
 	call->answer_owner = endpoint;
-	call->state = QMODEM_VOIP_ACTIVE;
+	mark_call_active(call);
 	qmodem_voip_call_touch(call);
 	issue(command, opaque, "ATA");
 	return 0;
@@ -212,6 +242,25 @@ int qmodem_voip_hangup(struct qmodem_voip_call *call,
 			       qmodem_voip_command_fn command, void *opaque)
 {
 	return terminate(call, endpoint, command, opaque);
+}
+
+int qmodem_voip_send_dtmf(struct qmodem_voip_call *call,
+			  enum qmodem_voip_endpoint endpoint, char digit,
+			  qmodem_voip_command_fn command, void *opaque)
+{
+	char at_command[16];
+	if (!call || !call->enabled || !endpoint_is_source(endpoint))
+		return -1;
+	if (call->state != QMODEM_VOIP_ACTIVE)
+		return -2;
+	if (call->origin != endpoint && call->answer_owner != endpoint)
+		return -3;
+	if (!(isdigit((unsigned char)digit) || digit == '*' || digit == '#' ||
+	      (digit >= 'A' && digit <= 'D')))
+		return -4;
+	(void)snprintf(at_command, sizeof(at_command), "AT+VTS=\"%c\"", digit);
+	issue(command, opaque, at_command);
+	return 0;
 }
 
 int qmodem_voip_start_recovery(struct qmodem_voip_call *call,
@@ -311,6 +360,7 @@ static void clear_call(struct qmodem_voip_call *call)
 	call->endpoint = QMODEM_VOIP_ENDPOINT_NONE;
 	call->number[0] = '\0';
 	call->caller_id_withheld = 0;
+	call->active_since_msec = 0;
 	call->answer_owner = QMODEM_VOIP_ENDPOINT_NONE;
 	call->reconcile_voice_misses = 0;
 	qmodem_voip_call_touch(call);
@@ -417,7 +467,7 @@ int qmodem_voip_line(struct qmodem_voip_call *call, const char *port,
 		call->reconcile_pending = 0;
 		call->reconcile_voice_misses = 0;
 		switch (status) {
-		case 0: call->state = QMODEM_VOIP_ACTIVE; break;
+		case 0: mark_call_active(call); break;
 		case 1: case 2: call->state = QMODEM_VOIP_OUTGOING_SETUP; break;
 		case 3: call->state = QMODEM_VOIP_EARLY_MEDIA; break;
 		case 4: case 5: call->state = QMODEM_VOIP_INCOMING_RINGING; break;
@@ -437,6 +487,7 @@ int qmodem_voip_line(struct qmodem_voip_call *call, const char *port,
 			call->endpoint = QMODEM_VOIP_ENDPOINT_CELLULAR;
 			call->state = QMODEM_VOIP_INCOMING_RINGING;
 			call->answer_owner = QMODEM_VOIP_ENDPOINT_NONE;
+			call->active_since_msec = 0;
 		}
 		notify(event, call, "ring", opaque);
 		return 0;

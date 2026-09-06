@@ -38,6 +38,7 @@ enum {
 	PARAM_ORIGIN,
 	PARAM_USERNAME,
 	PARAM_PASSWORD,
+	PARAM_DIGIT,
 	PARAM_MAX
 };
 
@@ -52,7 +53,8 @@ static const struct blobmsg_policy action_policy[PARAM_MAX] = {
 	[PARAM_NUMBER] = { .name = "number", .type = BLOBMSG_TYPE_STRING },
 	[PARAM_ORIGIN] = { .name = "origin", .type = BLOBMSG_TYPE_STRING },
 	[PARAM_USERNAME] = { .name = "username", .type = BLOBMSG_TYPE_STRING },
-	[PARAM_PASSWORD] = { .name = "password", .type = BLOBMSG_TYPE_STRING }
+	[PARAM_PASSWORD] = { .name = "password", .type = BLOBMSG_TYPE_STRING },
+	[PARAM_DIGIT] = { .name = "digit", .type = BLOBMSG_TYPE_STRING }
 };
 
 static const struct blobmsg_policy credential_policy[PARAM_CREDENTIAL_MAX] = {
@@ -471,6 +473,10 @@ void qmodem_voip_add_redacted_status(struct blob_buf *buffer,
 			   qmodem_voip_endpoint_name(call->endpoint));
 	blobmsg_add_u8(buffer, "number_present", call->number[0] != '\0');
 	blobmsg_add_u8(buffer, "caller_id_withheld", call->caller_id_withheld);
+	blobmsg_add_string(buffer, "remote_number",
+		call->caller_id_withheld ? "" : call->number);
+	blobmsg_add_u64(buffer, "call_duration_seconds",
+		qmodem_voip_call_duration_seconds(call));
 	blobmsg_add_u8(buffer, "enabled", call->enabled);
 	blobmsg_add_u64(buffer, "revision", call->revision);
 	blobmsg_add_u64(buffer, "restart_epoch", call->restart_epoch);
@@ -542,7 +548,17 @@ static int action_call(struct ubus_context *ubus,
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
 				    "disabled", "qmodem voip is disabled");
 	app->command_failed = 0;
-	if (strcmp(action, "originate") == 0) {
+	if (strcmp(action, "send_dtmf") == 0) {
+		const char *digit;
+		if (!parameters[PARAM_DIGIT] ||
+		    strlen(blobmsg_get_string(parameters[PARAM_DIGIT])) != 1U)
+			return qmodem_voip_reply_status(ubus, request,
+				UBUS_STATUS_INVALID_ARGUMENT, "invalid_dtmf",
+				"one DTMF digit is required");
+		digit = blobmsg_get_string(parameters[PARAM_DIGIT]);
+		result = qmodem_voip_send_dtmf(&app->call, endpoint, digit[0],
+			qmodem_voip_issue_at, app);
+	} else if (strcmp(action, "originate") == 0) {
 		if (!parameters[PARAM_NUMBER])
 			return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_INVALID_ARGUMENT,
 					    "invalid_number", "number is required");
@@ -585,12 +601,35 @@ static int action_call(struct ubus_context *ubus,
 		result = qmodem_voip_hangup(&app->call, endpoint, qmodem_voip_issue_at, app);
 	}
 	if (app->command_failed) {
+		if (strcmp(action, "send_dtmf") == 0)
+			return qmodem_voip_reply_status(ubus, request,
+				UBUS_STATUS_UNKNOWN_ERROR, "at_failed",
+				"DTMF command failed");
 		qmodem_voip_cancel_serial_prepare();
 		app->call.state = QMODEM_VOIP_FAULT;
 		qmodem_voip_call_touch(&app->call);
 		qmodem_voip_publish_event(&app->call, "fault", app);
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_UNKNOWN_ERROR,
 				    "at_failed", "AT command failed");
+	}
+	if (strcmp(action, "send_dtmf") == 0) {
+		if (result == -4)
+			return qmodem_voip_reply_status(ubus, request,
+				UBUS_STATUS_INVALID_ARGUMENT, "invalid_dtmf",
+				"DTMF digit is unsupported");
+		if (result == -3)
+			return qmodem_voip_reply_status(ubus, request,
+				UBUS_STATUS_PERMISSION_DENIED, "invalid_endpoint",
+				"endpoint does not own this call");
+		if (result == -2)
+			return qmodem_voip_reply_status(ubus, request,
+				UBUS_STATUS_NOT_SUPPORTED, "invalid_state",
+				"DTMF requires an active call");
+		if (result != 0)
+			return qmodem_voip_reply_status(ubus, request,
+				UBUS_STATUS_INVALID_ARGUMENT, "invalid_endpoint",
+				"endpoint is unsupported");
+		return qmodem_voip_reply_ok_snapshot(ubus, request);
 	}
 	if (result == -3)
 		return qmodem_voip_reply_status(ubus, request, UBUS_STATUS_NOT_SUPPORTED,
@@ -1060,6 +1099,7 @@ static const struct ubus_method methods[] = {
 	UBUS_METHOD("answer", action_method, action_policy),
 	UBUS_METHOD("reject", action_method, action_policy),
 	UBUS_METHOD("hangup", action_method, action_policy),
+	UBUS_METHOD("send_dtmf", action_method, action_policy),
 	UBUS_METHOD("set_sip_credentials", set_sip_credentials_method, credential_policy),
 	UBUS_METHOD("issue_media_token", qmodem_voip_media_token_method, qmodem_voip_media_token_policy),
 	UBUS_METHOD("issue_socket_session", qmodem_voip_socket_session_method, qmodem_voip_socket_session_policy),
