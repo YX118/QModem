@@ -1,4 +1,5 @@
 'use strict';
+'require baseclass';
 
 const OBJECT = 'qmodem_voip';
 const EVENT_TOPIC = 'qmodem_voip.call';
@@ -31,7 +32,8 @@ const PARAMS = Object.freeze({
 const SNAPSHOT_FIELDS = Object.freeze([
 	'state', 'enabled', 'origin', 'endpoint', 'answer_owner',
 	'number_present', 'caller_id_withheld', 'revision', 'restart_epoch',
-	'sequence', 'drop_count', 'reconcile_pending'
+	'sequence', 'drop_count', 'reconcile_pending', 'media', 'media_engine',
+	'browser_media', 'media_url'
 ]);
 
 const ERROR_CODES = Object.freeze([
@@ -42,7 +44,8 @@ const ERROR_CODES = Object.freeze([
 
 const api = Object.freeze({ OBJECT, EVENT_TOPIC, METHODS, PARAMS, SNAPSHOT_FIELDS, ERROR_CODES });
 
-if (typeof module !== 'undefined' && module.exports)
+if (typeof module !== 'undefined' && module.exports && typeof baseclass === 'undefined')
 	module.exports = api;
 
-return api;
+else
+	return baseclass.extend(api);

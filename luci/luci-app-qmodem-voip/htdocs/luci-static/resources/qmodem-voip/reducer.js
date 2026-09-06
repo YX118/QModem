@@ -1,4 +1,5 @@
 'use strict';
+'require baseclass';
 
 const STATES = Object.freeze([
 	'disabled', 'idle', 'outgoing_setup', 'incoming_ringing', 'early_media',
@@ -15,6 +16,7 @@ function initialState() {
 		credentialStatus: 'unknown',
 		credentialUsername: '',
 		mediaStatus: 'not_ready',
+		mediaUrl: '',
 		mediaPermission: 'unknown',
 		requiresResnapshot: false,
 		lastStatusKey: ''
@@ -50,7 +52,11 @@ function copySnapshot(input) {
 		restart_epoch: input.restart_epoch ?? 0,
 		sequence: input.sequence ?? 0,
 		drop_count: input.drop_count ?? 0,
-		reconcile_pending: asBoolean(input.reconcile_pending)
+		reconcile_pending: asBoolean(input.reconcile_pending),
+		media: String(input.media || ''),
+		media_engine: String(input.media_engine || ''),
+		browser_media: String(input.browser_media || ''),
+		media_url: String(input.media_url || '')
 	};
 }
 
@@ -64,7 +70,10 @@ function applySnapshot(state, input, source, eventName) {
 		return state;
 
 	const previous = state.snapshot;
-	if (previous && counter(snapshot.revision) <= counter(previous.revision))
+	/* Status polling can enrich the same call revision after media_sync()
+	 * starts the browser WebSocket listener.  Ignore only genuinely older
+	 * revisions so media_url/browser_media changes are not lost. */
+	if (previous && counter(snapshot.revision) < counter(previous.revision))
 		return state;
 
 	const epochChanged = previous && counter(snapshot.restart_epoch) !== counter(previous.restart_epoch);
@@ -76,6 +85,8 @@ function applySnapshot(state, input, source, eventName) {
 	return Object.assign({}, state, {
 		snapshot,
 		error: null,
+		mediaStatus: snapshot.media || snapshot.media_engine || state.mediaStatus,
+		mediaUrl: snapshot.media_url,
 		requiresResnapshot: clearAfterSnapshot ? false : (state.requiresResnapshot || Boolean(eventRequiresResnapshot)),
 		lastStatusKey: statusKey(snapshot)
 	});
@@ -90,7 +101,8 @@ function reduce(state, action) {
 	case 'CAPABILITIES':
 		return Object.assign({}, current, {
 			capabilities: action.value || null,
-			mediaStatus: action.value?.media || 'not_ready',
+			mediaStatus: action.value?.media || action.value?.media_engine || 'not_ready',
+			mediaUrl: action.value?.media_url || current.mediaUrl,
 			error: null
 		});
 	case 'SNAPSHOT':
@@ -109,7 +121,7 @@ function reduce(state, action) {
 		});
 	case 'MEDIA_RESULT':
 		return Object.assign({}, current, {
-			mediaStatus: action.value?.status === 'error' ? (action.value.message === 'not_ready' ? 'not_ready' : 'error') : 'ready',
+			mediaStatus: action.value?.status === 'error' && action.value.message === 'not_ready' ? 'not_ready' : current.mediaStatus,
 			error: action.value?.status === 'error' ? action.value : null
 		});
 	case 'MEDIA_PERMISSION':
@@ -141,7 +153,8 @@ function errorMessage(error) {
 function viewModel(state) {
 	const capabilities = state.capabilities || {};
 	const snapshot = state.snapshot || { state: 'disabled', enabled: false };
-	const supported = capabilities.supported === true && capabilities.support_state === 'supported';
+	const capabilityPending = !state.capabilities || Object.keys(capabilities).length === 0;
+	const supported = !capabilityPending && capabilities.supported === true && capabilities.support_state === 'supported';
 	const stable = !state.requiresResnapshot && snapshot.state !== 'recovering' && !snapshot.reconcile_pending;
 	const enabled = supported && snapshot.enabled === true;
 	const canControl = enabled && stable;
@@ -155,7 +168,9 @@ function viewModel(state) {
 	});
 
 	let disabledReason = '';
-	if (!supported)
+	if (capabilityPending)
+		disabledReason = _('Waiting for modem discovery. Call controls will become available when the modem is ready.');
+	else if (!supported)
 		disabledReason = _('Unsupported hardware: call controls are unavailable.');
 	else if (state.requiresResnapshot || snapshot.state === 'recovering' || snapshot.reconcile_pending)
 		disabledReason = _('State recovery is in progress. Refreshing the call snapshot.');
@@ -164,6 +179,7 @@ function viewModel(state) {
 
 	return Object.assign({
 		supported,
+		capabilityPending,
 		enabled,
 		stable,
 		disabledReason,
@@ -178,7 +194,8 @@ function viewModel(state) {
 
 const api = Object.freeze({ STATES, LOCAL_ENDPOINTS, TERMINAL_STATES, initialState, reduce, copySnapshot, viewModel, errorMessage });
 
-if (typeof module !== 'undefined' && module.exports)
+if (typeof module !== 'undefined' && module.exports && typeof baseclass === 'undefined')
 	module.exports = api;
 
-return api;
+else
+	return baseclass.extend(api);

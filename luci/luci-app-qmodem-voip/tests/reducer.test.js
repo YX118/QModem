@@ -22,7 +22,7 @@ assert.deepEqual(contract.ERROR_CODES.slice(-2), [ 'invalid_credentials', 'activ
 assert.equal(contract.OBJECT, 'qmodem_voip');
 assert.equal(contract.EVENT_TOPIC, 'qmodem_voip.call');
 
-const supported = { status: 'experimental', supported: true, support_state: 'supported', media: 'not_ready' };
+const supported = { status: 'experimental', supported: true, support_state: 'supported', media: 'ready' };
 const unsupported = { status: 'experimental', supported: false, support_state: 'unsupported', media: 'not_ready' };
 
 function snapshot(state, revision, overrides) {
@@ -46,6 +46,12 @@ assert.equal(reducer.viewModel(model(supported, snapshot('recovering', 5, { reco
 assert.equal(reducer.viewModel(model(supported, snapshot('fault', 6))).canOriginate, false);
 
 let state = model(supported, snapshot('idle', 1));
+assert.equal(state.mediaStatus, 'ready');
+state = reducer.reduce(state, { type: 'SNAPSHOT', value: snapshot('active', 2, { media_engine: 'ready', browser_media: 'ready', media_url: 'wss://router.example:9443/media' }) });
+assert.equal(state.mediaUrl, 'wss://router.example:9443/media');
+assert.equal(state.snapshot.browser_media, 'ready');
+state = reducer.reduce(state, { type: 'MEDIA_RESULT', value: { status: 'error', error: 'not_ready', message: 'connection failed' } });
+assert.equal(state.mediaStatus, 'ready', 'a browser connection failure must not hide a ready modem media backend');
 state = reducer.reduce(state, { type: 'EVENT', value: snapshot('active', 3, { event: 'event_gap', restart_epoch: 2, reconcile_pending: true }) });
 assert.equal(state.requiresResnapshot, true);
 assert.equal(reducer.viewModel(state).canMute, false);
@@ -71,25 +77,53 @@ collect(resourceDir);
 assert.equal(resources.some((source) => /external[_]sip|localStorage|sessionStorage|console\.log|password.*console|token.*console/i.test(source)), false);
 
 const surfaceSource = fs.readFileSync(path.resolve(__dirname, '../htdocs/luci-static/resources/qmodem-voip/surface.js'), 'utf8');
-assert.match(surfaceSource, /type: type \|\| 'button'/);
+assert.match(surfaceSource, /class: `cbi-button cbi-button-\$\{style \|\| 'neutral'\}`/);
+assert.match(surfaceSource, /new ui\.Textfield/);
+assert.match(surfaceSource, /new ui\.Checkbox/);
+assert.match(surfaceSource, /ui\.showModal\(_\('Incoming call'\)/);
+assert.match(surfaceSource, /ui\.hideModal\(\)/);
 assert.match(surfaceSource, /Rotate credentials'[\s\S]+null, 'submit'/);
 assert.match(surfaceSource, /dialForm\.addEventListener\('submit', \(event\) => context\.originate\(event\)\)/);
-assert.match(surfaceSource, /button\(_\('Call'\), 'qvoip-button--primary', null, 'submit'\)/);
+assert.match(surfaceSource, /button\(_\('Call'\), 'action', null, 'submit'\)/);
 assert.doesNotMatch(surfaceSource, /button\(_\('Call'\)[^\n]+context\.originate/);
 assert.match(surfaceSource, /key\.disabled = true/);
 assert.match(surfaceSource, /key\.setAttribute\('aria-describedby', 'qvoip-keypad-help'\)/);
-assert.match(surfaceSource, /context\.refs\.callDetail, context\.refs\.dialForm, context\.refs\.actions, context\.refs\.overlay/);
+assert.match(surfaceSource, /context\.refs\.callDetail, context\.refs\.dialForm, context\.refs\.actions/);
+assert.doesNotMatch(surfaceSource, /role: 'alertdialog'/);
 assert.match(surfaceSource, /context\.refs\.enableLabel/);
 assert.match(surfaceSource, /context\.refs\.enableLabel = node\('span', \{\}, \[ _\('Disabled'\) \]\)/);
 
 const viewSource = fs.readFileSync(path.resolve(__dirname, '../htdocs/luci-static/resources/view/qmodem-voip/call.js'), 'utf8');
 assert.match(viewSource, /'require rpc as luciRpc';/);
 assert.match(viewSource, /luciRpc\.getSessionID\(\)/);
+assert.match(viewSource, /rpc\[action\]\(\.\.\.\(Array\.isArray\(payload\) \? payload : \[\]\)\)/);
+assert.match(viewSource, /this\.run\('originate', \[ 'browser', number \]\)/);
+assert.match(viewSource, /this\.run\('answer', \[ 'browser' \]\)/);
+assert.match(viewSource, /this\.run\('setSipCredentials', \[ this\.refs\.sipUser\.value\.trim\(\), password \]/);
+assert.match(viewSource, /await this\.requestMediaStream\(\);[\s\S]+this\.run\('originate'/);
+assert.match(viewSource, /await this\.syncMedia\(snapshot\)/);
+assert.match(viewSource, /\(!this\.pendingMediaStream && !this\.media\.hasAudio\(\)\)/);
+assert.match(viewSource, /this\.media\.isConnected\(\)/);
+assert.match(viewSource, /if \(this\.mediaStartRequest\)\s+await this\.mediaStartRequest;/);
+assert.match(viewSource, /this\.mediaStreamRequest = navigator\.mediaDevices\.getUserMedia/);
+assert.match(viewSource, /this\.mediaStartRequest = \(async \(\) =>/);
+assert.doesNotMatch(viewSource, /capabilityRetryDeadline/);
+assert.match(viewSource, /startMedia\(\) \{[\s\S]+if \(this\.state\.mediaStatus !== 'ready'\)/);
+assert.match(viewSource, /this\.refs\.mediaAction\.disabled = this\.state\.mediaStatus !== 'ready'/);
+assert.doesNotMatch(viewSource, /\[ 'idle', 'disabled' \]\.indexOf\(model\.state\)[\s\S]+this\.refs\.dial\.value = ''/);
 assert.doesNotMatch(viewSource, /crypto\.randomUUID\(\)/);
 assert.match(viewSource, /this\.refs\.enableLabel\.textContent = model\.enabled \? _\('Enabled'\) : _\('Disabled'\)/);
 const cssSource = fs.readFileSync(path.resolve(__dirname, '../htdocs/luci-static/resources/qmodem-voip/qmodem-voip.css'), 'utf8');
-assert.match(cssSource, /\.qvoip-form \{ align-items: flex-start; \}/);
-assert.match(cssSource, /\.qvoip-dial-form, \.qvoip-actions \{ align-items: end; \}/);
-assert.match(cssSource, /\.qvoip-form > \.qvoip-button \{ align-self: end; \}/);
+assert.doesNotMatch(cssSource, /--qvoip-(surface|text|accent|status)/);
+assert.match(cssSource, /\.qvoip-page \.cbi-section/);
+assert.match(cssSource, /\.qvoip-keypad \.cbi-button/);
+
+const menu = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../root/usr/share/luci/menu.d/luci-app-qmodem-voip.json'), 'utf8'));
+assert.ok(menu['admin/modem/qmodem/qmodem-voip']);
+assert.equal(menu['admin/modem/advanced/qmodem-voip'].title, undefined);
+assert.deepEqual(menu['admin/modem/advanced/qmodem-voip'].action, {
+	type: 'alias',
+	path: 'admin/modem/qmodem/qmodem-voip'
+});
 
 console.log('PASS: qmodem voip reducer contract');

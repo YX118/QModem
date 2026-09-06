@@ -1,4 +1,5 @@
 'use strict';
+'require baseclass';
 'require rpc';
 'require qmodem-voip.contract as contract';
 
@@ -13,6 +14,9 @@ Object.keys(contract.METHODS).forEach((name) => {
 	});
 });
 
-const api = Object.assign({}, calls, { eventTopic: contract.EVENT_TOPIC });
+const api = Object.freeze(Object.assign({}, calls, { eventTopic: contract.EVENT_TOPIC }));
 
-return Object.freeze(api);
+if (typeof module !== 'undefined' && module.exports && typeof baseclass === 'undefined')
+	module.exports = api;
+else
+	return baseclass.extend(api);

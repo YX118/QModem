@@ -1,82 +1,131 @@
 'use strict';
+'require baseclass';
+'require ui';
 
 function node(tag, attrs, children) {
 	return E(tag, attrs || {}, children || []);
 }
 
+function button(label, style, handler, type) {
+	return node('button', {
+		type: type || 'button',
+		class: `cbi-button cbi-button-${style || 'neutral'}`,
+		click: handler || null
+	}, [ label ]);
+}
+
 function field(label, control, help) {
-	return node('label', { class: 'qvoip-field' }, [
-		node('span', { class: 'qvoip-field__label' }, [ label ]), control,
-		help ? node('span', { class: 'qvoip-help' }, [ help ]) : null
+	return node('div', { class: 'cbi-value' }, [
+		node('label', { class: 'cbi-value-title' }, [ label ]),
+		node('div', { class: 'cbi-value-field' }, [
+			control,
+			help ? node('div', { class: 'cbi-value-description' }, [ help ]) : null
+		])
 	]);
 }
 
-function button(label, className, handler, type) {
-	const result = node('button', { type: type || 'button', class: `qvoip-button ${className || ''}` }, [ label ]);
-	if (handler)
-		result.addEventListener('click', handler);
-	return result;
+function textfield(context, name, options) {
+	const widget = new ui.Textfield('', options || {});
+	const rendered = widget.render();
+	context.widgets[name] = widget;
+	context.refs[name] = rendered.querySelector('input');
+	return rendered;
+}
+
+function checkbox(context, name, options) {
+	const widget = new ui.Checkbox('0', options || {});
+	const rendered = widget.render();
+	context.widgets[name] = widget;
+	context.refs[name] = rendered.querySelector('input[type="checkbox"]');
+	return rendered;
+}
+
+function setIncomingModal(context, visible) {
+	if (visible && !context.incomingModalOpen) {
+		context.incomingModalOpen = true;
+		context.incomingModal = ui.showModal(_('Incoming call'), [
+			node('p', {}, [ _('Caller ID is withheld.') ]),
+			node('div', { class: 'right' }, [
+				button(_('Reject'), 'negative', ui.createHandlerFn(context, () => context.terminate('reject'))),
+				' ',
+				button(_('Answer'), 'positive', ui.createHandlerFn(context, () => context.answer()))
+			])
+		], 'qvoip-incoming-modal');
+	}
+	else if (!visible && context.incomingModalOpen) {
+		ui.hideModal();
+		context.incomingModal = null;
+		context.incomingModalOpen = false;
+	}
 }
 
 function build(context) {
 	context.refs = {};
-	context.refs.support = node('span', { class: 'qvoip-badge' });
-	context.refs.capability = node('p', { class: 'qvoip-copy' });
-	context.refs.enable = node('input', { type: 'checkbox', class: 'qvoip-switch' });
+	context.widgets = {};
+	context.incomingModal = null;
+	context.incomingModalOpen = false;
+	context.refs.support = node('span', { class: 'label' });
+	context.refs.capability = node('div', { class: 'cbi-section-descr' });
+	const enableControl = checkbox(context, 'enable', { id: 'qvoip-enable' });
 	context.refs.enableLabel = node('span', {}, [ _('Disabled') ]);
-	context.refs.enable.addEventListener('change', () => context.run(context.refs.enable.checked ? 'enable' : 'disable', {}));
-	context.refs.sipStatus = node('p', { class: 'qvoip-status-line' });
-	context.refs.sipForm = node('form', { class: 'qvoip-form' });
-	context.refs.sipUser = node('input', { type: 'text', autocomplete: 'username', required: true });
-	context.refs.sipPassword = node('input', { type: 'password', autocomplete: 'new-password', required: true });
+	enableControl.appendChild(context.refs.enableLabel);
+	context.refs.enable.addEventListener('change', () => context.run(context.refs.enable.checked ? 'enable' : 'disable', []));
+	context.refs.sipStatus = node('div', { class: 'cbi-section-descr' });
+	context.refs.sipForm = node('form', { class: 'cbi-section-node' });
+	const sipUser = textfield(context, 'sipUser', { id: 'qvoip-sip-user', name: 'username', optional: false });
+	const sipPassword = textfield(context, 'sipPassword', { id: 'qvoip-sip-password', name: 'password', password: true, optional: false });
+	context.refs.sipUser.setAttribute('autocomplete', 'username');
+	context.refs.sipUser.required = true;
+	context.refs.sipPassword.setAttribute('autocomplete', 'new-password');
+	context.refs.sipPassword.required = true;
 	context.refs.sipForm.addEventListener('submit', (event) => context.saveCredentials(event));
-	context.refs.callStatus = node('span', { class: 'qvoip-state' });
-	context.refs.callDetail = node('p', { class: 'qvoip-copy', id: 'qvoip-call-detail' });
-	context.refs.dial = node('input', { type: 'tel', inputmode: 'tel', maxlength: 63, autocomplete: 'off', spellcheck: 'false', required: true });
-	context.refs.dialForm = node('form', { class: 'qvoip-dial-form' });
+	context.refs.callStatus = node('span', { class: 'label' });
+	context.refs.callDetail = node('div', { class: 'cbi-section-descr', id: 'qvoip-call-detail' });
+	const dial = textfield(context, 'dial', { id: 'qvoip-destination', name: 'destination', maxlength: 63, optional: false });
+	context.refs.dial.setAttribute('type', 'tel');
+	context.refs.dial.setAttribute('inputmode', 'tel');
+	context.refs.dial.setAttribute('autocomplete', 'off');
+	context.refs.dial.setAttribute('spellcheck', 'false');
+	context.refs.dial.required = true;
 	context.refs.dial.setAttribute('aria-describedby', 'qvoip-call-detail');
+	context.refs.dialForm = node('form', { class: 'qvoip-dial-form' });
 	context.refs.dialForm.addEventListener('submit', (event) => context.originate(event));
-	context.refs.dialForm.appendChild(field(_('Destination'), context.refs.dial, _('Use digits and the modem-supported call control characters.')));
-	context.refs.dialForm.appendChild(button(_('Call'), 'qvoip-button--primary', null, 'submit'));
+	context.refs.dialForm.appendChild(field(_('Destination'), dial, _('Use digits and the modem-supported call control characters.')));
+	context.refs.dialForm.appendChild(button(_('Call'), 'action', null, 'submit'));
 	context.refs.dialForm.querySelector('button').setAttribute('aria-describedby', 'qvoip-call-detail');
-	context.refs.timer = node('time', { class: 'qvoip-timer' }, [ '00:00' ]); context.refs.actions = node('div', { class: 'qvoip-actions' });
-	context.refs.mute = button(_('Mute'), 'qvoip-button--secondary', () => context.toggleMute());
-	context.refs.hangup = button(_('Hang up'), 'qvoip-button--danger', () => context.terminate('hangup'));
-	context.refs.actions.append(context.refs.mute, context.refs.hangup);
+	context.refs.timer = node('time', { class: 'qvoip-timer' }, [ '00:00' ]);
+	context.refs.actions = node('div', { class: 'cbi-page-actions' });
+	context.refs.mute = button(_('Mute'), 'neutral', ui.createHandlerFn(context, () => context.toggleMute()));
+	context.refs.hangup = button(_('Hang up'), 'negative', ui.createHandlerFn(context, () => context.terminate('hangup')));
+	context.refs.actions.append(context.refs.mute, ' ', context.refs.hangup);
 	context.refs.mute.setAttribute('aria-describedby', 'qvoip-call-detail');
 	context.refs.hangup.setAttribute('aria-describedby', 'qvoip-call-detail');
-	context.refs.mediaStatus = node('p', { class: 'qvoip-copy' }); context.refs.mediaAction = button(_('Start browser audio'), 'qvoip-button--secondary', () => context.startMedia());
-	context.refs.permission = node('p', { class: 'qvoip-help', id: 'qvoip-media-help' });
+	context.refs.mediaStatus = node('div', { class: 'cbi-section-descr' });
+	context.refs.mediaAction = button(_('Start browser audio'), 'action', ui.createHandlerFn(context, () => context.startMedia()));
+	context.refs.permission = node('div', { class: 'cbi-value-description', id: 'qvoip-media-help' });
 	context.refs.mediaAction.setAttribute('aria-describedby', 'qvoip-media-help');
-	context.refs.live = node('p', { class: 'qvoip-live', 'aria-live': 'polite' });
-	context.refs.error = node('p', { class: 'qvoip-error', role: 'alert', hidden: true });
-	context.refs.overlay = node('section', { class: 'qvoip-incoming', role: 'alertdialog', 'aria-labelledby': 'qvoip-incoming-title', hidden: true });
-	context.refs.overlay.append(
-		node('h3', { id: 'qvoip-incoming-title' }, [ _('Incoming call') ]),
-		node('p', { class: 'qvoip-copy' }, [ _('Caller ID is withheld.') ]),
-		button(_('Answer'), 'qvoip-button--primary', () => context.answer()),
-		button(_('Reject'), 'qvoip-button--danger', () => context.terminate('reject'))
-	);
+	context.refs.live = node('div', { class: 'qvoip-live', 'aria-live': 'polite' });
+	context.refs.error = node('div', { class: 'alert-message error', role: 'alert', hidden: true });
 
-	const sipPanel = node('section', { class: 'qvoip-panel' }, [
-		node('div', { class: 'qvoip-panel__heading' }, [ node('h3', {}, [ _('SIP account') ]) ]),
-		context.refs.sipStatus, context.refs.sipForm
+	const sipPanel = node('div', { class: 'cbi-section' }, [
+		node('h3', {}, [ _('SIP account') ]), context.refs.sipStatus, context.refs.sipForm
 	]);
 	context.refs.sipForm.append(
-		field(_('Username'), context.refs.sipUser),
-		field(_('Password'), context.refs.sipPassword, _('Write-only. The password is cleared after each attempt.')),
-		button(_('Rotate credentials'), 'qvoip-button--primary', null, 'submit')
+		field(_('Username'), sipUser),
+		field(_('Password'), sipPassword, _('Write-only. The password is cleared after each attempt.')),
+		node('div', { class: 'cbi-page-actions' }, [ button(_('Rotate credentials'), 'apply', null, 'submit') ])
 	);
 
-	const statusPanel = node('section', { class: 'qvoip-panel qvoip-status-panel' }, [
-		node('div', { class: 'qvoip-panel__heading' }, [ node('h3', {}, [ _('Capability and service') ]), context.refs.support ]),
+	const statusPanel = node('div', { class: 'cbi-section' }, [
+		node('div', { class: 'qvoip-section-heading' }, [ node('h3', {}, [ _('Capability and service') ]), context.refs.support ]),
 		context.refs.capability,
-		field(_('Experimental call service'), node('span', { class: 'qvoip-switch-row' }, [ context.refs.enable, context.refs.enableLabel ]), _('Support comes from qmodem_voip.capabilities.'))
+		field(_('Experimental call service'), enableControl, _('Support comes from qmodem_voip.capabilities.'))
 	]);
 
 	const keypad = node('div', { class: 'qvoip-keypad', 'aria-describedby': 'qvoip-keypad-help' }, [
 		...['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map((value) => {
-			const key = button(value, 'qvoip-key', null);
+			const key = button(value, 'neutral', null);
+			key.classList.add('qvoip-key');
 			key.disabled = true;
 			key.setAttribute('aria-describedby', 'qvoip-keypad-help');
 			return key;
@@ -84,28 +133,31 @@ function build(context) {
 	]);
 	keypad.querySelectorAll('button').forEach((key) => key.setAttribute('aria-label', _('Send DTMF %s').format(key.textContent)));
 
-	const callPanel = node('section', { class: 'qvoip-panel qvoip-call-panel' }, [
-		node('div', { class: 'qvoip-panel__heading' }, [ node('h3', {}, [ _('Call workspace') ]), context.refs.callStatus, context.refs.timer ]),
-		context.refs.callDetail, context.refs.dialForm, context.refs.actions, context.refs.overlay,
+	const callPanel = node('div', { class: 'cbi-section qvoip-call-panel' }, [
+		node('div', { class: 'qvoip-section-heading' }, [ node('h3', {}, [ _('Call workspace') ]), node('div', {}, [ context.refs.callStatus, ' ', context.refs.timer ]) ]),
+		context.refs.callDetail, context.refs.dialForm, context.refs.actions,
 		node('h4', {}, [ _('Keypad') ]),
-		node('p', { id: 'qvoip-keypad-help', class: 'qvoip-help' }, [ _('DTMF is reserved for a future media contract.') ]), keypad
+		node('div', { id: 'qvoip-keypad-help', class: 'cbi-value-description' }, [ _('DTMF is reserved for a future media contract.') ]), keypad
 	]);
-	const mediaPanel = node('aside', { class: 'qvoip-panel qvoip-media-panel' }, [
-		node('h3', {}, [ _('Audio and media') ]), context.refs.mediaStatus, context.refs.mediaAction, context.refs.permission
+	const mediaPanel = node('div', { class: 'cbi-section qvoip-media-panel' }, [
+		node('h3', {}, [ _('Audio and media') ]), context.refs.mediaStatus,
+		node('div', { class: 'cbi-page-actions' }, [ context.refs.mediaAction ]), context.refs.permission
 	]);
 
-	context.root = node('div', { class: 'qvoip-page', 'data-event-topic': context.rpc.eventTopic }, [ node('div', { class: 'qvoip-shell' }, [
-		node('header', { class: 'qvoip-header' }, [ node('div', {}, [ node('h2', {}, [ _('Experimental QModem voice') ]), node('p', { class: 'qvoip-copy' }, [ _('Unsupported hardware fails closed. This page controls one modem call.') ]) ]), node('span', { class: 'qvoip-header__flag' }, [ _('EXPERIMENTAL') ]) ]),
+	context.root = node('div', { class: 'qvoip-page', 'data-event-topic': context.rpc.eventTopic }, [
+		node('h2', {}, [ _('Experimental QModem voice') ]),
+		node('div', { class: 'cbi-map-descr' }, [ _('Unsupported hardware fails closed. This page controls one modem call.') ]),
 		node('div', { class: 'qvoip-settings-grid' }, [ statusPanel, sipPanel ]),
 		node('div', { class: 'qvoip-workspace-grid' }, [ callPanel, mediaPanel ]),
 		context.refs.error, context.refs.live
-	]) ]);
+	]);
 	return context.root;
 }
 
-const api = Object.freeze({ build });
+const api = Object.freeze({ build, setIncomingModal });
 
-if (typeof module !== 'undefined' && module.exports)
+if (typeof module !== 'undefined' && module.exports && typeof baseclass === 'undefined')
 	module.exports = api;
 
-return api;
+else
+	return baseclass.extend(api);
