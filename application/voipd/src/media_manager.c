@@ -108,6 +108,10 @@ void qmodem_voip_media_status(struct blob_buf *buffer)
 		app->media.canonical_to_modem.underruns);
 	blobmsg_add_u32(buffer, "media_drift_ppm", (uint32_t)(app->media.modem_to_canonical.drift_ppm + 100));
 	blobmsg_add_u64(buffer, "media_tone_failures", app->media.tone_failures);
+	blobmsg_add_u64(buffer, "browser_uplink_frames", app->browser.uplink_frames);
+	blobmsg_add_u64(buffer, "browser_uplink_non_silent_frames",
+		app->browser.uplink_non_silent_frames);
+	blobmsg_add_u32(buffer, "browser_uplink_peak", app->browser.uplink_peak);
 	blobmsg_add_u64(buffer, "serial_capture_frames",
 		atomic_load(&app->media.serial.captured_frames));
 	blobmsg_add_u64(buffer, "serial_poll_wakeups",

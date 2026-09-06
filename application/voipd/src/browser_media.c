@@ -523,6 +523,7 @@ int qmodem_voip_browser_media_receive(struct qmodem_voip_browser_media *browser,
 	struct qmodem_voip_browser_frame frame;
 	int16_t converted[80];
 	size_t converted_samples = 0;
+	unsigned peak = 0;
 	if (!browser || !browser->ready || !browser->attached ||
 	    qmodem_voip_browser_frame_parse(data, length, &frame) != 0 ||
 	    (browser->sequence_seen && frame.sequence != browser->expected_sequence) ||
@@ -531,6 +532,16 @@ int qmodem_voip_browser_media_receive(struct qmodem_voip_browser_media *browser,
 		QMODEM_VOIP_BROWSER_RATE, converted, sizeof(converted) / sizeof(converted[0]),
 		QMODEM_VOIP_MEDIA_RATE, &converted_samples) != 0 || converted_samples != 80U)
 		return -1;
+	for (size_t i = 0; i < QMODEM_VOIP_BROWSER_FRAME_SAMPLES; i++) {
+		unsigned magnitude = frame.samples[i] == INT16_MIN ? 32768U :
+			(unsigned)(frame.samples[i] < 0 ? -frame.samples[i] : frame.samples[i]);
+		if (magnitude > peak)
+			peak = magnitude;
+	}
+	browser->uplink_frames++;
+	if (peak > 32U)
+		browser->uplink_non_silent_frames++;
+	browser->uplink_peak = peak;
 	browser->expected_sequence = frame.sequence + 1U;
 	browser->last_timestamp_ms = frame.timestamp_ms;
 	browser->sequence_seen = 1;

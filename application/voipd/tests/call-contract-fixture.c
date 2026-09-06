@@ -43,18 +43,29 @@ int main(void)
 	qmodem_voip_call_init(&call);
 	qmodem_voip_call_set_enabled(&call, 1);
 	assert(qmodem_voip_call_select_at_port(&call, "ttyUSB2") == 1);
-	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 1,
+	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 1, "RING",
+		QMODEM_VOIP_CORR_IDLE, 0, 0, NULL, NULL, NULL) == 0);
+	assert(call.state == QMODEM_VOIP_INCOMING_RINGING);
+	assert(qmodem_voip_poll_active(&call, capture_command, NULL) == 0);
+	assert(strcmp(issued, "AT+CLCC") == 0);
+	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 2,
 		"+CLCC: 1,0,0,1,0,\"\",128",
 		QMODEM_VOIP_CORR_RESPONSE, 7, 0, NULL, NULL, NULL) == 0);
-	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 2,
+	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 3,
 		"+CLCC: 2,0,0,1,0,\"\",128",
 		QMODEM_VOIP_CORR_RESPONSE, 7, 0, NULL, NULL, NULL) == 0);
-	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 3,
+	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 4,
 		"+CLCC: 3,1,4,0,0,\"15500001234\",128",
 		QMODEM_VOIP_CORR_RESPONSE, 7, 0, NULL, NULL, NULL) == 0);
 	assert(call.state == QMODEM_VOIP_INCOMING_RINGING);
 	assert(strcmp(call.number, "15500001234") == 0);
 	assert(call.caller_id_withheld == 0);
+	assert(qmodem_voip_poll_active(&call, capture_command, NULL) == 0);
+	assert(strcmp(issued, "AT+CLCC") == 0);
+	assert(qmodem_voip_line(&call, "ttyUSB2", 1, 5, "OK",
+		QMODEM_VOIP_CORR_TERMINAL, 8, 0, NULL, NULL, NULL) == 0);
+	assert(call.state == QMODEM_VOIP_INCOMING_RINGING);
+	assert(strcmp(call.number, "15500001234") == 0);
 
 	qmodem_voip_call_set_enabled(&call, 0);
 	assert(qmodem_voip_call_duration_seconds(&call) == 0);

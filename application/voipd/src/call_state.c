@@ -282,6 +282,7 @@ int qmodem_voip_poll_active(struct qmodem_voip_call *call,
 {
 	if (!call || !call->enabled ||
 	    (call->state != QMODEM_VOIP_OUTGOING_SETUP &&
+	     call->state != QMODEM_VOIP_INCOMING_RINGING &&
 	     call->state != QMODEM_VOIP_EARLY_MEDIA &&
 	     call->state != QMODEM_VOIP_ACTIVE &&
 	     call->state != QMODEM_VOIP_TERMINATING) ||
@@ -409,6 +410,7 @@ int qmodem_voip_line(struct qmodem_voip_call *call, const char *port,
 	    correlation == QMODEM_VOIP_CORR_TERMINAL && command_id != 0 &&
 	    (call->reconcile_command_id == 0 || command_id == call->reconcile_command_id)) {
 		if ((call->state == QMODEM_VOIP_OUTGOING_SETUP ||
+		     call->state == QMODEM_VOIP_INCOMING_RINGING ||
 		     call->state == QMODEM_VOIP_EARLY_MEDIA ||
 		     call->state == QMODEM_VOIP_ACTIVE) &&
 		    ++call->reconcile_voice_misses < 2U) {
@@ -419,6 +421,7 @@ int qmodem_voip_line(struct qmodem_voip_call *call, const char *port,
 			return 0;
 		}
 		if ((call->state != QMODEM_VOIP_OUTGOING_SETUP &&
+		     call->state != QMODEM_VOIP_INCOMING_RINGING &&
 		     call->state != QMODEM_VOIP_EARLY_MEDIA &&
 		     call->state != QMODEM_VOIP_ACTIVE) ||
 		    call->reconcile_voice_misses >= 2U)

@@ -57,6 +57,9 @@ struct qmodem_voip_browser_media {
 	int sequence_seen;
 	int16_t uplink[QMODEM_VOIP_MEDIA_SAMPLES];
 	unsigned uplink_count;
+	uint64_t uplink_frames;
+	uint64_t uplink_non_silent_frames;
+	unsigned uplink_peak;
 	uint64_t dropped;
 	int attached;
 	int ready;

@@ -14,8 +14,8 @@
         "interface_number": "01",
         "sample_rate": 8000,
         "frame_ms": 20,
-        "transfer_bytes": 320,
-        "transfer_interval_ms": 20,
+        "transfer_bytes": 1024,
+        "transfer_interval_ms": 60,
         "qaudmod": 2,
         "qpcmv": "1,0",
         "qpcmv_cfg": "8000,20"

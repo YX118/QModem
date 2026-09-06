@@ -20,8 +20,8 @@
         "qpcmv_cfg": "8000,20",
         "qpcmv": "1,0",
         "qaudmod": 2,
-        "transfer_bytes": 320,
-        "transfer_interval_ms": 20,
+        "transfer_bytes": 1024,
+        "transfer_interval_ms": 60,
         "uac": false,
         "gps_outport": "none"
       }
