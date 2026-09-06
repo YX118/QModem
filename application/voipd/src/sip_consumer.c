@@ -133,6 +133,8 @@ static int g711_bridge_decode(enum qmodem_voip_media_codec codec,
 static struct consumer app;
 static volatile sig_atomic_t running = 1;
 static void stop_media(void);
+static int rtp_open(void);
+static int attach_media(void);
 
 static void stop_handler(int signo)
 {
@@ -736,12 +738,18 @@ static pj_bool_t on_response(pjsip_rx_data *response)
 			(const char *)body->data, body->len, &media) == 0;
 		if (media_attached) {
 			app.media = media;
-			if (ubus_action("answer", NULL) == 0 && response->msg_info.to &&
+			/* For a cellular-originated call the SIP 200 response is the
+			 * answer trigger.  The old path answered the modem call but never
+			 * attached the RTP/local media socket, so the call looked connected
+			 * while no modem PCM could reach the SIP peer.  Answer first so the
+			 * daemon has an active revision, then bind both media directions. */
+			if (ubus_action("answer", NULL) == 0 && rtp_open() == 0 &&
+				attach_media() == 0 && response->msg_info.to &&
 			    copy_pj_string(remote_tag, sizeof(remote_tag),
 				&response->msg_info.to->tag) == 0)
 				(void)qmodem_voip_sip_call_establish(&app.call, remote_tag);
 			else {
-				(void)ubus_action("hangup", NULL);
+				stop_media();
 				qmodem_voip_sip_call_release(&app.call);
 			}
 		} else {
@@ -756,7 +764,6 @@ static pj_bool_t on_response(pjsip_rx_data *response)
 }
 
 static void release_pending_lan_response(void);
-static int attach_media(void);
 
 static int invoke_action(void *opaque)
 {

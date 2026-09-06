@@ -953,11 +953,13 @@ void qmodem_voip_publish_event(const struct qmodem_voip_call *call,
 	    (call->state == QMODEM_VOIP_EARLY_MEDIA ||
 	     call->state == QMODEM_VOIP_ACTIVE))
 		qmodem_voip_serial_set_attached(&app->media, 1);
-	if (call->state == QMODEM_VOIP_OUTGOING_SETUP ||
-	    call->state == QMODEM_VOIP_INCOMING_RINGING ||
-	    call->state == QMODEM_VOIP_EARLY_MEDIA ||
-	    call->state == QMODEM_VOIP_ACTIVE ||
-	    call->state == QMODEM_VOIP_TERMINATING) {
+	/* A normal call must not schedule a voice-server restart.  On this
+	 * firmware the dependency restart can take over a minute; arming it from
+	 * ringing/active/terminating therefore makes the next call fail with
+	 * "modem voice service is recovering" even though the previous call ended
+	 * cleanly.  Recovery is reserved for a media safety failure, which moves
+	 * the call into FAULT and is followed by the normal idle transition. */
+	if (call->state == QMODEM_VOIP_FAULT) {
 		if (!app->voice_restart_needed)
 			syslog(LOG_INFO, "voice-server recovery armed by call state %s",
 				qmodem_voip_state_name(call->state));
