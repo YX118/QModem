@@ -4,6 +4,7 @@ config main 'main'
 
 config sip 'sip'
 	option enabled '0'
+	option username 'qmodem'
 	option interface 'br-lan'
 	option rtp_start '40000'
 	option rtp_end '40031'
