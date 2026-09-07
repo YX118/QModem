@@ -57,6 +57,11 @@ return view.extend({
 		enabled.default = '0';
 		enabled.rmempty = false;
 		enabled.description = _('Starts modem voice preparation and browser media support.');
+		const webEnabled = section.option(form.Flag, 'web_enabled',
+			_('Enable HTTPS and WebSocket media access'));
+		webEnabled.default = '0';
+		webEnabled.rmempty = false;
+		webEnabled.description = _('Enables the uhttpd HTTPS listener used by browser WSS media.');
 		this.serviceMap = map;
 		this.serviceOption = enabled;
 		return map;
@@ -86,9 +91,9 @@ return view.extend({
 			this.statusRequest = null;
 		if (snapshot) {
 			this.dispatch({ type: 'SNAPSHOT', value: snapshot });
-			await this.syncMedia(snapshot);
+			await this.syncMedia();
 		}
-		return snapshot;
+		return this.state.snapshot;
 	},
 
 	showError(error) {
@@ -157,7 +162,7 @@ return view.extend({
 			return;
 		}
 		this.refs.dial.value = '';
-		await this.syncMedia(response);
+		await this.syncMedia();
 	},
 
 	async answer() {
@@ -172,7 +177,7 @@ return view.extend({
 		if (!response)
 			this.releasePendingMedia();
 		else
-			await this.syncMedia(response);
+			await this.syncMedia();
 		return response;
 	},
 
@@ -263,7 +268,11 @@ return view.extend({
 			this.updateView();
 	},
 
-	async syncMedia(snapshot) {
+	async syncMedia() {
+		/* Only reducer-accepted state may own media. A delayed poll can return
+		 * an old idle snapshot after originate; acting on that raw response
+		 * would cancel the new WebSocket while it is still CONNECTING. */
+		let snapshot = this.state.snapshot;
 		if (snapshot?.state === 'idle') {
 			this.disconnectMedia();
 			this.mediaRetryAt = 0;
@@ -278,12 +287,14 @@ return view.extend({
 			this.mediaConnecting || !this.state.mediaUrl || Date.now() < (this.mediaRetryAt || 0))
 			return;
 		this.mediaConnecting = true;
-		const pollingPaused = poll.active() ? poll.stop() : false;
 		try {
-			/* Safari may reject a same-origin WebSocket when a status RPC is still
-			 * in flight.  Drain it and keep polling stopped through the upgrade. */
+			/* Drain the one older request already in flight. Its response is reduced
+			 * before use and therefore cannot supersede this call generation. */
 			if (this.statusRequest)
 				await this.statusRequest;
+			snapshot = this.state.snapshot;
+			if ([ 'outgoing_setup', 'early_media', 'active' ].indexOf(snapshot?.state) === -1)
+				return;
 			if (!this.media.hasAudio())
 				await this.media.attachAudio(this.pendingMediaStream, WORKLET_URL);
 			await this.media.resume();
@@ -305,8 +316,6 @@ return view.extend({
 		}
 		finally {
 			this.mediaConnecting = false;
-			if (pollingPaused)
-				poll.start();
 		}
 	},
 
@@ -321,9 +330,7 @@ return view.extend({
 				/* Permission prompts can outlast a call-state transition.  Refresh
 				 * before minting the token so the WebSocket is opened against the
 				 * current call revision as soon as audio permission is granted. */
-				const snapshot = await this.refresh();
-				if (snapshot)
-					await this.syncMedia(snapshot);
+				await this.refresh();
 			}
 			catch (error) {
 				this.handleMediaError(error);
@@ -352,8 +359,10 @@ return view.extend({
 	},
 
 	handleEvent(event) {
-		if (event?.event)
+		if (event?.event) {
 			this.dispatch({ type: 'EVENT', value: event });
+			void this.syncMedia();
+		}
 	},
 
 	updateTimer(seconds) {

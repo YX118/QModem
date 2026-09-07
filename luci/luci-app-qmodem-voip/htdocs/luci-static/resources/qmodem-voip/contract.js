@@ -36,7 +36,8 @@ const SNAPSHOT_FIELDS = Object.freeze([
 	'number_present', 'caller_id_withheld', 'remote_number',
 	'call_duration_seconds', 'revision', 'restart_epoch',
 	'sequence', 'drop_count', 'reconcile_pending', 'media', 'media_engine',
-	'browser_media', 'media_url'
+	'browser_media', 'media_url', 'browser_downlink_frames',
+	'browser_downlink_empty', 'browser_downlink_write_errors'
 ]);
 
 const ERROR_CODES = Object.freeze([

@@ -103,6 +103,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_daemon_wait $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_consumer_wait $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_registrar_wait $(1)/usr/sbin/
+	$(INSTALL_BIN) ./files/usr/sbin/qmodem_voip_web $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/etc/init.d/qmodem_voip $(1)/etc/init.d/
 	$(INSTALL_CONF) ./files/etc/config/qmodem_voip $(1)/etc/config/
 	$(INSTALL_BIN) ./files/etc/qmodem_voip/firewall.include $(1)/etc/qmodem_voip/

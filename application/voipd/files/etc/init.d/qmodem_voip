@@ -69,12 +69,14 @@ start_service()
 	procd_close_instance
 
 	[ -n "$lan_address" ] && qmodem_voip_start_registrar "$lan_address" "$media_socket_path"
+	/usr/sbin/qmodem_voip_web
 }
 
 reload_service()
 {
 	stop
 	start
+	/usr/sbin/qmodem_voip_web
 }
 
 service_triggers()
